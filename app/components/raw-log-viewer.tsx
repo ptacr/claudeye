@@ -7,7 +7,7 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import { ChevronDown } from "lucide-react";
+import { ChevronDown, Wrench } from "lucide-react";
 import type { LogEntry, ToolUseBlock } from "@/lib/log-entries";
 import { StatsBar } from "@/app/components/log-viewer/stats-bar";
 import { QueueDivider } from "@/app/components/log-viewer/queue-divider";
@@ -43,6 +43,58 @@ function extractSubagents(entries: LogEntry[]): SubagentInfo[] {
   return Array.from(seen.values());
 }
 
+
+// ── Tool stats extraction ──
+
+interface ToolStat {
+  name: string;
+  count: number;
+  totalDurationMs: number;
+}
+
+function extractToolStats(entries: LogEntry[]): ToolStat[] {
+  const map = new Map<string, { count: number; totalDurationMs: number }>();
+  for (const entry of entries) {
+    if (entry.type !== "assistant") continue;
+    for (const block of entry.message.content) {
+      if (block.type !== "tool_use") continue;
+      if (block.name === "Task" && ((block as ToolUseBlock).subagentType || (block as ToolUseBlock).subagentId)) continue;
+      const existing = map.get(block.name) || { count: 0, totalDurationMs: 0 };
+      existing.count++;
+      if ((block as ToolUseBlock).result?.durationMs) {
+        existing.totalDurationMs += (block as ToolUseBlock).result!.durationMs;
+      }
+      map.set(block.name, existing);
+    }
+  }
+  return Array.from(map.entries())
+    .map(([name, stats]) => ({ name, ...stats }))
+    .sort((a, b) => b.count - a.count);
+}
+
+function ToolStatsGrid({ tools, compact }: { tools: ToolStat[]; compact?: boolean }) {
+  const cols = compact
+    ? "grid-cols-2 sm:grid-cols-3 gap-2"
+    : "grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3";
+  return (
+    <div className={`bg-card border border-border rounded-lg ${compact ? "p-3" : "p-4"}`}>
+      <div className={`grid ${cols}`}>
+        {tools.map((tool) => (
+          <div key={tool.name} className="flex items-center gap-2">
+            <Wrench className="w-3.5 h-3.5 text-muted-foreground" />
+            <div>
+              <div className={`${compact ? "text-xs" : "text-sm"} font-mono font-medium`}>{tool.name}</div>
+              <div className="text-xs text-muted-foreground">
+                {tool.count} call{tool.count !== 1 ? "s" : ""}
+                {tool.totalDurationMs > 0 && ` · ${(tool.totalDurationMs / 1000).toFixed(1)}s`}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 // ── Virtualized Entry List ──
 
@@ -220,8 +272,20 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
     return map;
   }, [entries, subagents]);
 
+  const toolStats = useMemo(() => extractToolStats(sessionEntries), [sessionEntries]);
+
   const [subagentsCollapsed, setSubagentsCollapsed] = useState(false);
+  const [collapsedSubagentIds, setCollapsedSubagentIds] = useState<Set<string>>(new Set());
   const [logsCollapsed, setLogsCollapsed] = useState(false);
+
+  const toggleSubagent = useCallback((id: string) => {
+    setCollapsedSubagentIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
 
   return (
     <div className="space-y-4">
@@ -246,33 +310,55 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
               key={sa.id}
               className="pl-3 border-l-2 border-primary/30 space-y-2"
             >
-              <div className="flex items-baseline gap-2">
+              <button
+                onClick={() => toggleSubagent(sa.id)}
+                className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+              >
+                <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${collapsedSubagentIds.has(sa.id) ? "-rotate-90" : ""}`} />
                 <span className="text-sm font-bold">{sa.type}</span>
                 {sa.description && (
                   <span className="text-xs text-muted-foreground truncate max-w-[400px]">
                     {sa.description}
                   </span>
                 )}
-              </div>
-              <StatsBar entries={subagentEntriesMap.get(sa.id) || []} compact />
-              <EvalResultsPanel
-                projectName={projectName}
-                sessionId={sessionId}
-                agentId={sa.id}
-                subagentType={sa.type}
-                subagentDescription={sa.description}
-                compact
-              />
-              <EnrichmentResultsPanel
-                projectName={projectName}
-                sessionId={sessionId}
-                agentId={sa.id}
-                subagentType={sa.type}
-                subagentDescription={sa.description}
-                compact
-              />
+              </button>
+              {!collapsedSubagentIds.has(sa.id) && (
+                <div className="space-y-2">
+                  <StatsBar entries={subagentEntriesMap.get(sa.id) || []} compact />
+                  <EvalResultsPanel
+                    projectName={projectName}
+                    sessionId={sessionId}
+                    agentId={sa.id}
+                    subagentType={sa.type}
+                    subagentDescription={sa.description}
+                    compact
+                  />
+                  <EnrichmentResultsPanel
+                    projectName={projectName}
+                    sessionId={sessionId}
+                    agentId={sa.id}
+                    subagentType={sa.type}
+                    subagentDescription={sa.description}
+                    compact
+                  />
+                  {(() => {
+                    const saTools = extractToolStats(subagentEntriesMap.get(sa.id) || []);
+                    return saTools.length > 0 ? <ToolStatsGrid tools={saTools} compact /> : null;
+                  })()}
+                </div>
+              )}
             </div>
           ))}
+        </div>
+      )}
+
+      {toolStats.length > 0 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Tools</span>
+            <span className="text-xs text-muted-foreground">({toolStats.reduce((s, t) => s + t.count, 0)})</span>
+          </div>
+          <ToolStatsGrid tools={toolStats} />
         </div>
       )}
 
