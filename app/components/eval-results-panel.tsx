@@ -16,6 +16,8 @@ import { CopyButton } from "@/app/components/copy-button";
 import { runEvals } from "@/app/actions/run-evals";
 import { runSubagentEvals } from "@/app/actions/run-subagent-evals";
 import type { EvalRunSummary, EvalRunResult } from "@/lib/evals/types";
+import type { EvalActionResult } from "@/app/actions/run-evals";
+import type { SubagentEvalActionResult } from "@/app/actions/run-subagent-evals";
 
 interface EvalResultsPanelProps {
   projectName: string;
@@ -24,6 +26,8 @@ interface EvalResultsPanelProps {
   subagentType?: string;
   subagentDescription?: string;
   compact?: boolean;
+  /** Pre-fetched result from batched dashboard call. null = loading, undefined = fetch independently. */
+  initialResult?: EvalActionResult | SubagentEvalActionResult | null;
 }
 
 function ScoreBar({ score }: { score: number }) {
@@ -101,7 +105,7 @@ function EvalResultRow({ result }: { result: EvalRunResult }) {
   );
 }
 
-export default function EvalResultsPanel({ projectName, sessionId, agentId, subagentType, subagentDescription, compact }: EvalResultsPanelProps) {
+export default function EvalResultsPanel({ projectName, sessionId, agentId, subagentType, subagentDescription, compact, initialResult }: EvalResultsPanelProps) {
   const [summary, setSummary] = useState<EvalRunSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -141,13 +145,33 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
     }
   }, [projectName, sessionId, agentId, subagentType, subagentDescription]);
 
-  // Auto-run on mount (uses cache); abort on unmount
+  // Apply pre-fetched result from dashboard batch call
   useEffect(() => {
+    if (initialResult === undefined) return; // no dashboard — will fetch independently
+    if (initialResult === null) return; // dashboard still loading — wait
+    // Apply the result directly
+    if (!initialResult.ok) {
+      setError(initialResult.error);
+    } else if (
+      ("hasEvals" in initialResult && !initialResult.hasEvals) ||
+      ("hasEvals" in initialResult === false)
+    ) {
+      setNoEvals(true);
+    } else if ("summary" in initialResult) {
+      setSummary(initialResult.summary);
+      setCached(initialResult.cached);
+    }
+    setLoading(false);
+  }, [initialResult]);
+
+  // Auto-run on mount when no dashboard result is provided; abort on unmount
+  useEffect(() => {
+    if (initialResult !== undefined) return; // dashboard handles this
     run(false);
     return () => {
       abortRef.current?.abort();
     };
-  }, [run]);
+  }, [run, initialResult]);
 
   // No evals registered — render nothing
   if (noEvals) return null;

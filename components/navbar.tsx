@@ -34,7 +34,7 @@ export const Navbar: React.FC = () => {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
             <a
-              href="https://claude.exosphere.host"
+              href="https://claudeye.exosphere.host"
               target="_blank"
               rel="noopener noreferrer"
               className="flex items-center gap-3 hover:opacity-80 transition-opacity"

@@ -12,6 +12,8 @@ import {
 import { runEnrichments } from "@/app/actions/run-enrichments";
 import { runSubagentEnrichments } from "@/app/actions/run-subagent-enrichments";
 import type { EnrichRunSummary, EnrichRunResult } from "@/lib/evals/enrich-types";
+import type { EnrichActionResult } from "@/app/actions/run-enrichments";
+import type { SubagentEnrichActionResult } from "@/app/actions/run-subagent-enrichments";
 
 interface EnrichmentResultsPanelProps {
   projectName: string;
@@ -20,6 +22,8 @@ interface EnrichmentResultsPanelProps {
   subagentType?: string;
   subagentDescription?: string;
   compact?: boolean;
+  /** Pre-fetched result from batched dashboard call. null = loading, undefined = fetch independently. */
+  initialResult?: EnrichActionResult | SubagentEnrichActionResult | null;
 }
 
 function formatValue(value: string | number | boolean): string {
@@ -66,7 +70,7 @@ function EnricherGroup({ result }: { result: EnrichRunResult }) {
   );
 }
 
-export default function EnrichmentResultsPanel({ projectName, sessionId, agentId, subagentType, subagentDescription, compact }: EnrichmentResultsPanelProps) {
+export default function EnrichmentResultsPanel({ projectName, sessionId, agentId, subagentType, subagentDescription, compact, initialResult }: EnrichmentResultsPanelProps) {
   const [summary, setSummary] = useState<EnrichRunSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -105,13 +109,33 @@ export default function EnrichmentResultsPanel({ projectName, sessionId, agentId
     }
   }, [projectName, sessionId, agentId, subagentType, subagentDescription]);
 
-  // Auto-run on mount (uses cache); abort on unmount
+  // Apply pre-fetched result from dashboard batch call
   useEffect(() => {
+    if (initialResult === undefined) return; // no dashboard — will fetch independently
+    if (initialResult === null) return; // dashboard still loading — wait
+    // Apply the result directly
+    if (!initialResult.ok) {
+      setError(initialResult.error);
+    } else if (
+      ("hasEnrichers" in initialResult && !initialResult.hasEnrichers) ||
+      ("hasEnrichers" in initialResult === false)
+    ) {
+      setNoEnrichers(true);
+    } else if ("summary" in initialResult) {
+      setSummary(initialResult.summary);
+      setCached(initialResult.cached);
+    }
+    setLoading(false);
+  }, [initialResult]);
+
+  // Auto-run on mount when no dashboard result is provided; abort on unmount
+  useEffect(() => {
+    if (initialResult !== undefined) return; // dashboard handles this
     run(false);
     return () => {
       abortRef.current?.abort();
     };
-  }, [run]);
+  }, [run, initialResult]);
 
   // No enrichers registered — render nothing
   if (noEnrichers) return null;
