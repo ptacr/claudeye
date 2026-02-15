@@ -7,12 +7,41 @@
 
 import React, { useCallback, useMemo, useState } from "react";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
-import type { LogEntry } from "@/lib/log-entries";
+import { ChevronDown } from "lucide-react";
+import type { LogEntry, ToolUseBlock } from "@/lib/log-entries";
 import { StatsBar } from "@/app/components/log-viewer/stats-bar";
 import { QueueDivider } from "@/app/components/log-viewer/queue-divider";
 import { EntryRow } from "@/app/components/log-viewer/entry-row";
 import EvalResultsPanel from "@/app/components/eval-results-panel";
 import EnrichmentResultsPanel from "@/app/components/enrichment-results-panel";
+
+// ── Subagent metadata extraction ──
+
+interface SubagentInfo {
+  id: string;
+  type: string;
+  description: string;
+}
+
+function extractSubagents(entries: LogEntry[]): SubagentInfo[] {
+  const seen = new Map<string, SubagentInfo>();
+  for (const entry of entries) {
+    if (entry.type !== "assistant") continue;
+    for (const block of entry.message.content) {
+      if (block.type === "tool_use" && block.name === "Task" && block.subagentId) {
+        const tb = block as ToolUseBlock;
+        if (!seen.has(tb.subagentId!)) {
+          seen.set(tb.subagentId!, {
+            id: tb.subagentId!,
+            type: tb.subagentType || "unknown",
+            description: tb.subagentDescription || "",
+          });
+        }
+      }
+    }
+  }
+  return Array.from(seen.values());
+}
 
 
 // ── Virtualized Entry List ──
@@ -180,6 +209,20 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
     [entries]
   );
 
+  const subagents = useMemo(() => extractSubagents(entries), [entries]);
+
+  const subagentEntriesMap = useMemo(() => {
+    const map = new Map<string, LogEntry[]>();
+    for (const sa of subagents) {
+      const source = `agent-${sa.id}`;
+      map.set(sa.id, entries.filter(e => e._source === source));
+    }
+    return map;
+  }, [entries, subagents]);
+
+  const [subagentsCollapsed, setSubagentsCollapsed] = useState(false);
+  const [logsCollapsed, setLogsCollapsed] = useState(false);
+
   return (
     <div className="space-y-4">
       <StatsBar entries={sessionEntries} />
@@ -188,18 +231,74 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
 
       <EnrichmentResultsPanel projectName={projectName} sessionId={sessionId} />
 
-      <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
-        {sessionEntries.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8">
-            No entries found.
-          </p>
-        ) : (
-          <VirtualizedEntryList
-            entries={sessionEntries}
-            allEntries={entries}
-            projectName={projectName}
-            sessionId={sessionId}
-          />
+      {subagents.length > 0 && (
+        <div className="space-y-3">
+          <button
+            onClick={() => setSubagentsCollapsed(prev => !prev)}
+            className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+          >
+            <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${subagentsCollapsed ? "-rotate-90" : ""}`} />
+            <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Subagents</span>
+            <span className="text-xs text-muted-foreground">({subagents.length})</span>
+          </button>
+          {!subagentsCollapsed && subagents.map((sa) => (
+            <div
+              key={sa.id}
+              className="pl-3 border-l-2 border-primary/30 space-y-2"
+            >
+              <div className="flex items-baseline gap-2">
+                <span className="text-sm font-bold">{sa.type}</span>
+                {sa.description && (
+                  <span className="text-xs text-muted-foreground truncate max-w-[400px]">
+                    {sa.description}
+                  </span>
+                )}
+              </div>
+              <StatsBar entries={subagentEntriesMap.get(sa.id) || []} compact />
+              <EvalResultsPanel
+                projectName={projectName}
+                sessionId={sessionId}
+                agentId={sa.id}
+                subagentType={sa.type}
+                subagentDescription={sa.description}
+                compact
+              />
+              <EnrichmentResultsPanel
+                projectName={projectName}
+                sessionId={sessionId}
+                agentId={sa.id}
+                subagentType={sa.type}
+                subagentDescription={sa.description}
+                compact
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div>
+        <button
+          onClick={() => setLogsCollapsed(prev => !prev)}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+        >
+          <ChevronDown className={`w-4 h-4 text-muted-foreground transition-transform ${logsCollapsed ? "-rotate-90" : ""}`} />
+          <span className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Logs</span>
+        </button>
+        {!logsCollapsed && (
+          <div className="mt-2 bg-card border border-border rounded-lg p-4 shadow-sm">
+            {sessionEntries.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">
+                No entries found.
+              </p>
+            ) : (
+              <VirtualizedEntryList
+                entries={sessionEntries}
+                allEntries={entries}
+                projectName={projectName}
+                sessionId={sessionId}
+              />
+            )}
+          </div>
         )}
       </div>
     </div>

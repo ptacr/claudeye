@@ -72,7 +72,7 @@ export default function EnrichmentResultsPanel({ projectName, sessionId, agentId
   const [error, setError] = useState<string | null>(null);
   const [noEnrichers, setNoEnrichers] = useState(false);
   const [cached, setCached] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
   const run = useCallback(async (forceRefresh = false) => {

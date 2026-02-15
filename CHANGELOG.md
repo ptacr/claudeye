@@ -2,6 +2,11 @@
 
 ## 0.5.3
 
+### UI Fixes & Improvements
+
+- **UI:** Eval results panel now defaults to collapsed (minimized) state
+- **UI:** Eval duration and cache status are now shown in the header bar alongside pass/fail counts, visible even when collapsed
+
 ### Per-Item Caching for Evals and Enrichments
 
 - **Performance:** Evals and enrichments are now cached per item instead of as a single blob per session. Adding a new eval or enrichment only runs the new one — existing unchanged items load from cache instantly.

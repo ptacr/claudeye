@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, afterAll } from "vitest";
+import { mkdtemp, rm } from "fs/promises";
+import { join } from "path";
+import { tmpdir } from "os";
 
 // Mock the hash module before importing manager
 vi.mock("@/lib/cache/hash", () => ({
@@ -29,18 +32,23 @@ const DISABLED_KEY = "__CLAUDEYE_CACHE_DISABLED__";
 
 describe("cache manager", () => {
   const originalEnv = process.env;
+  let tmpCacheDir: string;
 
-  beforeEach(() => {
+  beforeEach(async () => {
     vi.clearAllMocks();
     process.env = { ...originalEnv };
     // Clean globalThis state between tests
     delete (globalThis as any)[BACKEND_KEY];
     delete (globalThis as any)[DISABLED_KEY];
+    // Use a fresh temp directory for each test to avoid cross-test pollution
+    tmpCacheDir = await mkdtemp(join(tmpdir(), "claudeye-cache-test-"));
+    process.env.CLAUDEYE_CACHE_PATH = tmpCacheDir;
   });
 
   afterEach(async () => {
     await closeCacheBackend();
     process.env = originalEnv;
+    await rm(tmpCacheDir, { recursive: true, force: true }).catch(() => {});
   });
 
   describe("initCacheBackend", () => {
