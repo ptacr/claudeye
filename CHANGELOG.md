@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.4
+
+### UI Fixes & Improvements
+
+- **UI:** Fixed text overflow in tool name displays - long tool names (e.g., `mcp__vector_store__search_test_cases`) now truncate with ellipsis instead of overflowing
+- **UI:** Improved tool statistics grid layout to use full horizontal space with auto-fit columns (`repeat(auto-fit, minmax(200px, 1fr))`), providing more room for long tool names when fewer items are displayed
+- **UI:** Added proper flex constraints to prevent icon compression and ensure duration text remains visible
+- **UI:** Tool names in both log viewer and statistics grid now use `truncate` and `min-w-0` CSS classes for proper text overflow handling
+
 ## 0.5.3
 
 ### UI Fixes & Improvements

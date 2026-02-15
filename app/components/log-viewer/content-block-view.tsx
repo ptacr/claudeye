@@ -42,12 +42,12 @@ export const ContentBlockView = React.memo(function ContentBlockView({ block, al
       return (
         <div className="border border-border/50 rounded-lg p-3 bg-muted/10">
           <div className="flex items-center gap-2 mb-2">
-            <Wrench className="w-4 h-4 text-primary" />
-            <span className="font-mono text-sm text-primary">
+            <Wrench className="w-4 h-4 text-primary flex-shrink-0" />
+            <span className="font-mono text-sm text-primary truncate min-w-0">
               {block.name}
             </span>
             {block.result && (
-              <span className="text-xs text-muted-foreground ml-auto">
+              <span className="text-xs text-muted-foreground ml-auto flex-shrink-0">
                 {block.result.durationFormatted}
               </span>
             )}
