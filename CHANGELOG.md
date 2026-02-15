@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2
+
+- **Breaking:** `subagentId` removed from `EvalContext`. Use `source` field instead — it directly matches `entry._source` (`"session"` or `"agent-{id}"`)
+- Updated all examples to use `source` for subagent entry filtering
+
 ## 0.5.1
 
 - **Breaking:** `scope` removed from `EvalContext`. Replaced with `source` field (`"session"` or `"agent-{id}"`) that directly matches `entry._source` for easy filtering

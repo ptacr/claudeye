@@ -149,7 +149,6 @@ describe("evals/runner", () => {
     const evals = [{ name: "sub-eval", fn, scope: "subagent" as const }];
     await runAllEvals(stubEntries, stubStats, "proj", "sess", evals, {
       source: "agent-abc123",
-      subagentId: "abc123",
       subagentType: "Explore",
       subagentDescription: "test desc",
       parentSessionId: "sess",
@@ -160,7 +159,6 @@ describe("evals/runner", () => {
       projectName: "proj",
       sessionId: "sess",
       source: "agent-abc123",
-      subagentId: "abc123",
       subagentType: "Explore",
       subagentDescription: "test desc",
       parentSessionId: "sess",

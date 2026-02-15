@@ -49,7 +49,6 @@ export interface EvalContext {
   projectName: string;
   sessionId: string;
   source: string;  // "session" or "agent-{id}" — matches entry._source directly
-  subagentId?: string;
   subagentType?: string;
   subagentDescription?: string;
   parentSessionId?: string;

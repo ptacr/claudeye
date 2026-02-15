@@ -123,7 +123,6 @@ describe("evals/enrich-runner", () => {
     const enrichers = [{ name: "sub-enricher", fn, scope: "subagent" as const }];
     await runAllEnrichers(stubEntries, stubStats, "proj", "sess", enrichers, {
       source: "agent-abc123",
-      subagentId: "abc123",
       subagentType: "Explore",
       subagentDescription: "test desc",
       parentSessionId: "sess",
@@ -134,7 +133,6 @@ describe("evals/enrich-runner", () => {
       projectName: "proj",
       sessionId: "sess",
       source: "agent-abc123",
-      subagentId: "abc123",
       subagentType: "Explore",
       subagentDescription: "test desc",
       parentSessionId: "sess",

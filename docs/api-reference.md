@@ -463,7 +463,6 @@ interface EvalContext {
   projectName: string;                 // Encoded project folder name
   sessionId: string;                   // Session UUID
   source: string;                      // "session" or "agent-{id}" — matches entry._source directly
-  subagentId?: string;                 // Hex ID of the subagent (subagent scope only)
   subagentType?: string;               // e.g. 'Explore', 'Bash' (subagent scope only)
   subagentDescription?: string;        // Short description (subagent scope only)
   parentSessionId?: string;            // Parent session ID (subagent scope only)
@@ -652,7 +651,6 @@ app.eval('adaptive-eval', (ctx) => {
   if (ctx.source !== 'session') {
     // Running at subagent level — source is "agent-{id}"
     console.log(ctx.source);              // e.g. 'agent-a1b2c3'
-    console.log(ctx.subagentId);          // e.g. 'a1b2c3'
     console.log(ctx.subagentType);        // e.g. 'Explore'
     console.log(ctx.subagentDescription); // e.g. 'Search for auth code'
     console.log(ctx.parentSessionId);     // parent session ID
@@ -735,7 +733,7 @@ Cache invalidation works the same way, based on the subagent log file's mtime+si
 
 - **No subagents in session**: Subagent-scoped evals never run. Panels only mount inside expanded subagent cards.
 - **`scope: 'both'` with `subagentType`**: At session level, the `subagentType` filter is ignored. At subagent level, it applies.
-- **Conditions + scope**: Scope filtering happens first (registry level), then conditions run with the full `EvalContext` including scope metadata.
+- **Conditions + scope**: Scope filtering happens first (registry level), then conditions run with the full `EvalContext`.
 - **Backward compatibility**: Existing evals with no `scope` option default to `'session'`. Behavior is unchanged.
 
 ---
@@ -837,19 +835,34 @@ app.dashboard.filter('uses-subagents', ({ stats }) => stats.subagentCount > 0,
 
 // --- Subagent-scoped evals ---
 
-app.eval('explore-thoroughness', ({ entries }) => ({
-  pass: entries.length > 5,
-  score: Math.min(entries.length / 20, 1),
-}), { scope: 'subagent', subagentType: 'Explore' });
+// Filter to this subagent's entries using source
+app.eval('explore-thoroughness', ({ entries, source }) => {
+  const myEntries = entries.filter(e => e._source === source);
+  return {
+    pass: myEntries.length > 5,
+    score: Math.min(myEntries.length / 20, 1),
+    message: `${myEntries.length} entries for ${source}`,
+  };
+}, { scope: 'subagent', subagentType: 'Explore' });
 
-app.eval('agent-efficiency', ({ stats }) => ({
-  pass: stats.turnCount <= 10,
-  score: Math.max(0, 1 - stats.turnCount / 20),
-}), { scope: 'subagent' });
+// Compare subagent vs session tool usage
+app.eval('agent-efficiency', ({ entries, source, stats }) => {
+  const agentTools = entries
+    .filter(e => e._source === source && e.type === 'assistant')
+    .flatMap(e => (e.message?.content || []).filter(b => b.type === 'tool_use'));
+  return {
+    pass: agentTools.length <= 10,
+    score: Math.max(0, 1 - agentTools.length / 20),
+    message: `${agentTools.length} tool calls by ${source}`,
+  };
+}, { scope: 'subagent' });
 
 // --- Subagent-scoped enrichments ---
 
-app.enrich('agent-summary', ({ stats }) => ({
+// Use source to scope entry counts
+app.enrich('agent-summary', ({ entries, source, stats }) => ({
+  'Source': source,
+  'Agent Entries': entries.filter(e => e._source === source).length,
   'Agent Turns': stats.turnCount,
   'Agent Tool Calls': stats.toolCallCount,
 }), { scope: 'subagent' });

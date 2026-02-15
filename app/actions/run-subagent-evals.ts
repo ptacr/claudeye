@@ -61,7 +61,6 @@ export async function runSubagentEvals(
       subagentEvals,
       {
         source: `agent-${agentId}`,
-        subagentId: agentId,
         subagentType,
         subagentDescription,
         parentSessionId: sessionId,

@@ -247,7 +247,7 @@ app.eval('explore-depth', ({ entries }) => ({
 }), { scope: 'subagent', subagentType: 'Explore' });
 ```
 
-When running at subagent level, the context includes `source` (matching the entry's `_source`), `subagentId`, `subagentType`, `subagentDescription`, and `parentSessionId`. Note that `entries` and `stats` include combined session + subagent data. Use `source` to filter when you need scope-specific data:
+When running at subagent level, the context includes `source` (matching `entry._source`), `subagentType`, `subagentDescription`, and `parentSessionId`. Note that `entries` and `stats` include combined session + subagent data. Use `source` to filter when you need scope-specific data:
 
 ```js
 // entries includes all data (session + subagents).

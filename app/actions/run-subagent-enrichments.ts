@@ -61,7 +61,6 @@ export async function runSubagentEnrichments(
       subagentEnrichers,
       {
         source: `agent-${agentId}`,
-        subagentId: agentId,
         subagentType,
         subagentDescription,
         parentSessionId: sessionId,
