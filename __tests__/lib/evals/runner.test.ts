@@ -127,7 +127,7 @@ describe("evals/runner", () => {
       stats: stubStats,
       projectName: "myProj",
       sessionId: "mySess",
-      scope: "session",
+      source: "session",
     });
   });
 
@@ -148,7 +148,7 @@ describe("evals/runner", () => {
     const fn = vi.fn(() => ({ pass: true }));
     const evals = [{ name: "sub-eval", fn, scope: "subagent" as const }];
     await runAllEvals(stubEntries, stubStats, "proj", "sess", evals, {
-      scope: "subagent",
+      source: "agent-abc123",
       subagentId: "abc123",
       subagentType: "Explore",
       subagentDescription: "test desc",
@@ -159,7 +159,7 @@ describe("evals/runner", () => {
       stats: stubStats,
       projectName: "proj",
       sessionId: "sess",
-      scope: "subagent",
+      source: "agent-abc123",
       subagentId: "abc123",
       subagentType: "Explore",
       subagentDescription: "test desc",

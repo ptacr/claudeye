@@ -60,7 +60,7 @@ export async function runSubagentEvals(
       sessionId,
       subagentEvals,
       {
-        scope: 'subagent',
+        source: `agent-${agentId}`,
         subagentId: agentId,
         subagentType,
         subagentDescription,

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- **Breaking:** `scope` removed from `EvalContext`. Replaced with `source` field (`"session"` or `"agent-{id}"`) that directly matches `entry._source` for easy filtering
+- Subagent-scoped evals/enrichments can now filter entries with `entries.filter(e => e._source === source)` — no template literal needed
+
 ## 0.5.0 - Unified Session + Subagent Data Model
 
 ### Breaking Changes

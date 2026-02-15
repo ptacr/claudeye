@@ -99,7 +99,7 @@ describe("evals/dashboard-runner", () => {
       stats: stubStats,
       projectName: "myProj",
       sessionId: "mySess",
-      scope: "session",
+      source: "session",
     });
   });
 

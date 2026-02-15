@@ -462,7 +462,7 @@ interface EvalContext {
   stats: EvalLogStats;                 // Computed stats across all entries (session + subagent)
   projectName: string;                 // Encoded project folder name
   sessionId: string;                   // Session UUID
-  scope: 'session' | 'subagent';      // Whether running at session or subagent level
+  source: string;                      // "session" or "agent-{id}" — matches entry._source directly
   subagentId?: string;                 // Hex ID of the subagent (subagent scope only)
   subagentType?: string;               // e.g. 'Explore', 'Bash' (subagent scope only)
   subagentDescription?: string;        // Short description (subagent scope only)
@@ -649,7 +649,9 @@ When running at subagent level, the `EvalContext` includes additional metadata:
 
 ```js
 app.eval('adaptive-eval', (ctx) => {
-  if (ctx.scope === 'subagent') {
+  if (ctx.source !== 'session') {
+    // Running at subagent level — source is "agent-{id}"
+    console.log(ctx.source);              // e.g. 'agent-a1b2c3'
     console.log(ctx.subagentId);          // e.g. 'a1b2c3'
     console.log(ctx.subagentType);        // e.g. 'Explore'
     console.log(ctx.subagentDescription); // e.g. 'Search for auth code'
@@ -661,12 +663,12 @@ app.eval('adaptive-eval', (ctx) => {
 
 ### Combined Data in Subagent Scope
 
-Subagent-scoped evals and enrichments receive the full combined data (session + all subagents), not just the subagent's own entries. The `scope` field in `EvalContext` tells you what scope you're running in, and you can filter `entries` by `_source` if you need scope-specific data:
+Subagent-scoped evals and enrichments receive the full combined data (session + all subagents), not just the subagent's own entries. The `source` field in `EvalContext` directly matches the `_source` value on entries, so you can filter easily:
 
 ```js
 // Subagent-scoped eval that filters to its own entries
-app.eval('explore-thoroughness', ({ entries, subagentId }) => {
-  const myEntries = entries.filter(e => e._source === `agent-${subagentId}`);
+app.eval('explore-thoroughness', ({ entries, source }) => {
+  const myEntries = entries.filter(e => e._source === source);
   return {
     pass: myEntries.length > 5,
     score: Math.min(myEntries.length / 20, 1),
@@ -680,8 +682,8 @@ When you specify `subagentType`, the eval/enrichment only runs for subagents of 
 
 ```js
 // Only runs for Explore subagents
-app.eval('explore-thoroughness', ({ entries, subagentId }) => {
-  const myEntries = entries.filter(e => e._source === `agent-${subagentId}`);
+app.eval('explore-thoroughness', ({ entries, source }) => {
+  const myEntries = entries.filter(e => e._source === source);
   return {
     pass: myEntries.length > 5,
     score: Math.min(myEntries.length / 20, 1),
@@ -707,10 +709,10 @@ app.enrich('agent-summary',
 );
 
 // Scoped to both session and subagent level
-app.eval('quality-check', ({ stats, scope }) => ({
+app.eval('quality-check', ({ stats, source }) => ({
   pass: stats.toolCallCount <= 20,
   score: Math.max(0, 1 - stats.toolCallCount / 40),
-  message: `${scope}: ${stats.toolCallCount} tool calls`,
+  message: `${source}: ${stats.toolCallCount} tool calls`,
 }), { scope: 'both' });
 ```
 
@@ -869,4 +871,4 @@ app.enrich('agent-summary', ({ stats }) => ({
 - Use `app.dashboard.view()` to organize filters into focused groups. Each view gets its own `/dashboard/[viewName]` route.
 - The same filter name can be used in different views without conflict.
 - `app.dashboard.filter()` registers to the "default" view for backward compatibility.
-- `entries` contains combined session + subagent data. Each entry has `_source` (`"session"` or `"agent-{id}"`). Filter by `_source` when you need scoped data.
+- `entries` contains combined session + subagent data. Each entry has `_source` (`"session"` or `"agent-{id}"`). Use `source` from the context to filter: `entries.filter(e => e._source === source)`.

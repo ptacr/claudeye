@@ -20,7 +20,7 @@ export async function runAllEvals(
   contextOverrides?: Partial<EvalContext>,
 ): Promise<EvalRunSummary> {
   const items = evalsToRun ?? getRegisteredEvals();
-  const context: EvalContext = { entries, stats, projectName, sessionId, scope: 'session', ...contextOverrides };
+  const context: EvalContext = { entries, stats, projectName, sessionId, source: 'session', ...contextOverrides };
 
   return runAll(items, context, {
     skipResult: (item): EvalRunResult => ({

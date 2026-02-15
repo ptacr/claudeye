@@ -16,7 +16,7 @@ export async function runAllEnrichers(
   contextOverrides?: Partial<EvalContext>,
 ): Promise<EnrichRunSummary> {
   const items = enrichersToRun ?? getRegisteredEnrichers();
-  const context: EvalContext = { entries, stats, projectName, sessionId, scope: 'session', ...contextOverrides };
+  const context: EvalContext = { entries, stats, projectName, sessionId, source: 'session', ...contextOverrides };
 
   return runAll(items, context, {
     skipResult: (item): EnrichRunResult => ({

@@ -26,7 +26,7 @@ export async function runEnrichments(
     forceRefresh,
     getItems: getSessionScopedEnrichers,
     run: (rawLines, stats, items) =>
-      runAllEnrichers(rawLines, stats, projectName, sessionId, items as any, { scope: 'session' }),
+      runAllEnrichers(rawLines, stats, projectName, sessionId, items as any, { source: 'session' }),
   });
 
   if (!result.ok) return result;

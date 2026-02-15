@@ -101,7 +101,7 @@ describe("evals/enrich-runner", () => {
       stats: stubStats,
       projectName: "myProj",
       sessionId: "mySess",
-      scope: "session",
+      source: "session",
     });
   });
 
@@ -122,7 +122,7 @@ describe("evals/enrich-runner", () => {
     const fn = vi.fn(() => ({ val: true }));
     const enrichers = [{ name: "sub-enricher", fn, scope: "subagent" as const }];
     await runAllEnrichers(stubEntries, stubStats, "proj", "sess", enrichers, {
-      scope: "subagent",
+      source: "agent-abc123",
       subagentId: "abc123",
       subagentType: "Explore",
       subagentDescription: "test desc",
@@ -133,7 +133,7 @@ describe("evals/enrich-runner", () => {
       stats: stubStats,
       projectName: "proj",
       sessionId: "sess",
-      scope: "subagent",
+      source: "agent-abc123",
       subagentId: "abc123",
       subagentType: "Explore",
       subagentDescription: "test desc",

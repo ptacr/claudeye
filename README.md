@@ -247,15 +247,15 @@ app.eval('explore-depth', ({ entries }) => ({
 }), { scope: 'subagent', subagentType: 'Explore' });
 ```
 
-When running at subagent level, the context includes `subagentId`, `subagentType`, `subagentDescription`, and `parentSessionId`. Note that `entries` and `stats` include combined session + subagent data. Use `_source` to filter when you need scope-specific data:
+When running at subagent level, the context includes `source` (matching the entry's `_source`), `subagentId`, `subagentType`, `subagentDescription`, and `parentSessionId`. Note that `entries` and `stats` include combined session + subagent data. Use `source` to filter when you need scope-specific data:
 
 ```js
 // entries includes all data (session + subagents).
-// Use _source to filter when you need scope-specific data:
-app.eval('session-only-check', ({ entries }) => {
-  const sessionEntries = entries.filter(e => e._source === 'session');
-  return { pass: sessionEntries.length > 0 };
-});
+// Use source to filter — it matches entry._source directly:
+app.eval('agent-check', ({ entries, source }) => {
+  const myEntries = entries.filter(e => e._source === source);
+  return { pass: myEntries.length > 0 };
+}, { scope: 'subagent' });
 ```
 
 [Read more: Subagent scope, filtering, caching, and edge cases &rarr;](docs/api-reference.md#subagent-scope)

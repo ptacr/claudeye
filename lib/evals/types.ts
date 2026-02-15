@@ -48,7 +48,7 @@ export interface EvalContext {
   stats: EvalLogStats;
   projectName: string;
   sessionId: string;
-  scope: 'session' | 'subagent';
+  source: string;  // "session" or "agent-{id}" — matches entry._source directly
   subagentId?: string;
   subagentType?: string;
   subagentDescription?: string;

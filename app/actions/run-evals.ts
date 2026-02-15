@@ -26,7 +26,7 @@ export async function runEvals(
     forceRefresh,
     getItems: getSessionScopedEvals,
     run: (rawLines, stats, items) =>
-      runAllEvals(rawLines, stats, projectName, sessionId, items as any, { scope: 'session' }),
+      runAllEvals(rawLines, stats, projectName, sessionId, items as any, { source: 'session' }),
   });
 
   if (!result.ok) return result;

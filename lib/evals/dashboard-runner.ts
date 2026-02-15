@@ -15,7 +15,7 @@ export async function runAllFilters(
   filtersToRun?: RegisteredFilter[],
 ): Promise<FilterComputeSummary> {
   const items = filtersToRun ?? getRegisteredFilters();
-  const context: EvalContext = { entries, stats, projectName, sessionId, scope: 'session' };
+  const context: EvalContext = { entries, stats, projectName, sessionId, source: 'session' };
 
   return runAll(items, context, {
     // Skipped filters return value: false so downstream aggregation always has a value
