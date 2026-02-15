@@ -4,9 +4,10 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 vi.mock("@/lib/cache/hash", () => ({
   hashSessionFile: vi.fn(),
   hashEvalsModule: vi.fn(),
+  hashProjectsPath: vi.fn().mockReturnValue("ab12cd34"),
 }));
 
-import { hashSessionFile, hashEvalsModule } from "@/lib/cache/hash";
+import { hashSessionFile, hashEvalsModule, hashProjectsPath } from "@/lib/cache/hash";
 import {
   initCacheBackend,
   getCachedResult,
@@ -17,6 +18,7 @@ import type { CacheMeta } from "@/lib/cache/types";
 
 const mockHashSession = vi.mocked(hashSessionFile);
 const mockHashEvals = vi.mocked(hashEvalsModule);
+const mockHashPath = vi.mocked(hashProjectsPath);
 
 const BACKEND_KEY = "__CLAUDEYE_CACHE_BACKEND__";
 const DISABLED_KEY = "__CLAUDEYE_CACHE_DISABLED__";
@@ -198,6 +200,35 @@ describe("cache manager", () => {
 
       expect(subResult!.value).toEqual({ subagent: true });
       expect(sessResult!.value).toEqual({ session: true });
+    });
+  });
+
+  describe("filters kind", () => {
+    it("round-trips filter results with kind='filters'", async () => {
+      mockHashSession.mockResolvedValue("session-hash-1");
+      mockHashEvals.mockResolvedValue("evals-hash-1");
+
+      const filterSummary = { results: [{ name: "has-error", value: true }], totalDurationMs: 10 };
+      await setCachedResult("filters", "proj", "default/sess", filterSummary, ["has-error"]);
+
+      const result = await getCachedResult("filters", "proj", "default/sess", ["has-error"]);
+      expect(result).not.toBeNull();
+      expect(result!.value).toEqual(filterSummary);
+      expect(result!.cached).toBe(true);
+    });
+
+    it("isolates kinds — evals and filters with same project/session do not collide", async () => {
+      mockHashSession.mockResolvedValue("hash-1");
+      mockHashEvals.mockResolvedValue("hash-2");
+
+      await setCachedResult("evals", "proj", "sess", { type: "eval" }, ["e1"]);
+      await setCachedResult("filters", "proj", "sess", { type: "filter" }, ["f1"]);
+
+      const evalResult = await getCachedResult("evals", "proj", "sess", ["e1"]);
+      const filterResult = await getCachedResult("filters", "proj", "sess", ["f1"]);
+
+      expect(evalResult!.value).toEqual({ type: "eval" });
+      expect(filterResult!.value).toEqual({ type: "filter" });
     });
   });
 

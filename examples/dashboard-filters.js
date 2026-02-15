@@ -66,6 +66,18 @@ app.eval('has-completion', ({ entries }) => {
   };
 });
 
+// Filter to session-only entries when needed
+app.eval('session-tool-count', ({ entries }) => {
+  const sessionTools = entries
+    .filter(e => e._source === 'session' && e.type === 'assistant')
+    .flatMap(e => (e.message?.content || []).filter(b => b.type === 'tool_use'));
+  return {
+    pass: sessionTools.length <= 100,
+    score: Math.max(0, 1 - sessionTools.length / 200),
+    message: `${sessionTools.length} session-level tool calls`,
+  };
+});
+
 // ── Session-level enrichments ────────────────────────────────────
 
 app.enrich('session-overview', ({ stats }) => ({

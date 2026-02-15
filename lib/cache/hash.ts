@@ -1,7 +1,27 @@
 import { createHash } from "crypto";
 import { stat, readFile } from "fs/promises";
-import { join } from "path";
+import { join, resolve } from "path";
 import { getClaudeProjectsPath } from "../paths";
+
+/**
+ * Returns a short hash (first 8 hex chars of SHA-256) of the resolved
+ * absolute projects-path. Used to namespace cache keys so that different
+ * `--projects-path` values never collide.
+ *
+ * Memoized — the hash is computed once per process.
+ */
+let _cachedPathHash: string | null = null;
+export function hashProjectsPath(): string {
+  if (_cachedPathHash) return _cachedPathHash;
+  const projectsPath = resolve(getClaudeProjectsPath());
+  _cachedPathHash = createHash("sha256").update(projectsPath).digest("hex").slice(0, 8);
+  return _cachedPathHash;
+}
+
+/** @internal Reset memoized hash — only for tests. */
+export function _resetPathHashCache(): void {
+  _cachedPathHash = null;
+}
 
 /**
  * Hashes a session file using its mtime + size for speed.

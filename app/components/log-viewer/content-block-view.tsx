@@ -2,6 +2,7 @@ import React, { useMemo } from "react";
 import { Brain, Wrench } from "lucide-react";
 import type {
   ContentBlock,
+  LogEntry,
   UserEntry,
   AssistantEntry,
   GenericEntry,
@@ -15,19 +16,24 @@ import { SubagentToolCard } from "./entry-row";
 
 interface ContentBlockViewProps {
   block: ContentBlock;
+  allEntries?: LogEntry[];
   projectName: string;
   sessionId: string;
 }
 
-export const ContentBlockView = React.memo(function ContentBlockView({ block, projectName, sessionId }: ContentBlockViewProps) {
+export const ContentBlockView = React.memo(function ContentBlockView({ block, allEntries, projectName, sessionId }: ContentBlockViewProps) {
   switch (block.type) {
     case "text":
       return <p className="whitespace-pre-wrap text-sm">{block.text}</p>;
     case "tool_use":
       if (block.name === "Task" && (block.subagentType || block.subagentId)) {
+        const subagentEntries = block.subagentId && allEntries
+          ? allEntries.filter(e => e._source === `agent-${block.subagentId}`)
+          : undefined;
         return (
           <SubagentToolCard
             block={block}
+            subagentEntries={subagentEntries}
             projectName={projectName}
             sessionId={sessionId}
           />
@@ -81,17 +87,18 @@ export function UserContent({ entry }: { entry: UserEntry }) {
 
 interface AssistantContentProps {
   entry: AssistantEntry;
+  allEntries?: LogEntry[];
   projectName: string;
   sessionId: string;
 }
 
-export const AssistantContent = React.memo(function AssistantContent({ entry, projectName, sessionId }: AssistantContentProps) {
+export const AssistantContent = React.memo(function AssistantContent({ entry, allEntries, projectName, sessionId }: AssistantContentProps) {
   const { content } = entry.message;
 
   return (
     <div className="space-y-3">
       {content.map((block, i) => (
-        <ContentBlockView key={i} block={block} projectName={projectName} sessionId={sessionId} />
+        <ContentBlockView key={i} block={block} allEntries={allEntries} projectName={projectName} sessionId={sessionId} />
       ))}
     </div>
   );

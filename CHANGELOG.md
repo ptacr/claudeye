@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.5.0 - Unified Session + Subagent Data Model
+
+### Breaking Changes
+
+- `entries` passed to evals, enrichments, conditions, and dashboard filters now contains **combined** session + subagent data (previously session-only for session-scoped items, agent-only for subagent-scoped items)
+- Each entry has a `_source` field: `"session"` or `"agent-{id}"`
+- `stats` (EvalLogStats) now reflects combined totals
+- Subagent logs are loaded eagerly at parse time instead of on-demand
+- `loadSubagentLog` server action removed (subagent data is pre-loaded)
+
+### How to Migrate
+
+If your evals relied on receiving only session data, add a `_source` filter:
+
+```js
+// Before (implicit session-only):
+app.eval('my-eval', ({ entries }) => { ... });
+
+// After (explicit session-only):
+app.eval('my-eval', ({ entries }) => {
+  const sessionEntries = entries.filter(e => e._source === 'session');
+  ...
+});
+```
+
 ## 0.4.0 - Authentication and Filters
 
 ### Authentication

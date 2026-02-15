@@ -54,7 +54,7 @@ Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session
 
 - **Projects & sessions browser** - filter by date range or keyword, paginated and sorted newest-first
 - **Full execution trace viewer** - every message, tool call, thinking block, and system event
-- **Nested subagent logs** - expand to see subagent executions inline, loaded on demand
+- **Nested subagent logs** - expand to see subagent executions inline, pre-loaded with the session
 - **Virtual scrolling** - handles sessions with thousands of entries without performance issues
 
 ### Understand
@@ -247,7 +247,16 @@ app.eval('explore-depth', ({ entries }) => ({
 }), { scope: 'subagent', subagentType: 'Explore' });
 ```
 
-When running at subagent level, the context includes `subagentId`, `subagentType`, `subagentDescription`, and `parentSessionId`.
+When running at subagent level, the context includes `subagentId`, `subagentType`, `subagentDescription`, and `parentSessionId`. Note that `entries` and `stats` include combined session + subagent data. Use `_source` to filter when you need scope-specific data:
+
+```js
+// entries includes all data (session + subagents).
+// Use _source to filter when you need scope-specific data:
+app.eval('session-only-check', ({ entries }) => {
+  const sessionEntries = entries.filter(e => e._source === 'session');
+  return { pass: sessionEntries.length > 0 };
+});
+```
 
 [Read more: Subagent scope, filtering, caching, and edge cases &rarr;](docs/api-reference.md#subagent-scope)
 
@@ -311,7 +320,7 @@ When auth is active, all UI routes redirect to `/login`. After signing in, a sig
 
 1. `createApp()` + `app.eval()` / `app.enrich()` / `app.condition()` / `app.dashboard.view()` / `app.dashboard.filter()` register functions in global registries
 2. When you run `claudeye --evals ./my-file.js`, the server dynamically imports your file, populating the registries
-3. When the dashboard loads a session, server actions run all registered evals and enrichers against the session's raw JSONL lines
+3. When the dashboard loads a session, server actions run all registered evals and enrichers against the combined raw JSONL lines (session + all subagent logs)
 4. The global condition is checked first. If it fails, everything is skipped
 5. Per-item conditions are checked individually. Skipped items don't block others
 6. Each function is individually error-isolated. If one throws, the others still run

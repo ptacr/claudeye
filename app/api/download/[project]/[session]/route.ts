@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { readFile } from "fs/promises";
-import { join, relative } from "path";
-import { getClaudeProjectsPath } from "@/lib/paths";
+import { getCachedSessionLog } from "@/lib/log-entries";
 
 const UUID_RE = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/;
 const PATH_TRAVERSAL_RE = /(^|[\\/])\.\.($|[\\/])/;
@@ -24,16 +22,11 @@ export async function GET(
     return jsonError("Invalid project name", 400);
   }
 
-  const projectsPath = getClaudeProjectsPath();
-  const filePath = join(projectsPath, project, `${session}.jsonl`);
-
-  if (relative(projectsPath, filePath).startsWith("..")) {
-    return jsonError("Path traversal detected", 400);
-  }
-
   try {
-    const content = await readFile(filePath, "utf-8");
-    return new NextResponse(content, {
+    const { rawLines } = await getCachedSessionLog(project, session);
+    const combined = rawLines.map(r => JSON.stringify(r)).join("\n") + "\n";
+
+    return new NextResponse(combined, {
       headers: {
         "Content-Type": "application/x-ndjson",
         "Content-Disposition": `attachment; filename="${session}.jsonl"`,

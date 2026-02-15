@@ -458,8 +458,8 @@ Both evals and enrichers receive the same context object:
 
 ```ts
 interface EvalContext {
-  entries: Record<string, unknown>[];  // Raw JSONL lines (one parsed JSON object per line)
-  stats: EvalLogStats;                 // Computed stats (turn count, tool calls, etc.)
+  entries: Record<string, unknown>[];  // Combined session + subagent JSONL lines, each tagged with `_source`
+  stats: EvalLogStats;                 // Computed stats across all entries (session + subagent)
   projectName: string;                 // Encoded project folder name
   sessionId: string;                   // Session UUID
   scope: 'session' | 'subagent';      // Whether running at session or subagent level
@@ -470,11 +470,13 @@ interface EvalContext {
 }
 ```
 
-`entries` contains the **raw JSONL data**. Every line from the session log file is parsed as JSON and included with no filtering or transformation. This means:
+`entries` contains the **raw JSONL data** from the session and all its subagents combined. Every line from the session log file and its subagent log files is parsed as JSON and included. Each entry has a `_source` field: `"session"` for main session entries, or `"agent-{id}"` for subagent entries. This means:
 
 - Tool-result lines (which the display view merges into tool_use blocks) are present as separate entries
 - All entry types are included: `user`, `assistant`, `system`, `tool_result`, `queue-operation`, etc.
 - Properties are accessed directly (e.g. `e.usage?.total_tokens`) rather than through a `.raw` wrapper
+- Filter by `e._source === "session"` to get only main session data
+- Filter by `e._source` starting with `"agent-"` to get subagent data
 
 ### `EvalLogEntry` (helper type)
 
@@ -483,6 +485,7 @@ interface EvalContext {
 ```ts
 interface EvalLogEntry {
   type: string;
+  _source?: string;  // "session" or "agent-{id}"
   uuid: string;
   parentUuid: string | null;
   timestamp: string;
@@ -499,6 +502,8 @@ interface EvalLogEntry {
 ```
 
 ### `EvalLogStats`
+
+> Stats are computed across all entries (session + subagent combined). Use `_source` filtering on entries before computing custom scoped metrics if needed.
 
 ```ts
 interface EvalLogStats {
@@ -654,17 +659,35 @@ app.eval('adaptive-eval', (ctx) => {
 }, { scope: 'both' });
 ```
 
+### Combined Data in Subagent Scope
+
+Subagent-scoped evals and enrichments receive the full combined data (session + all subagents), not just the subagent's own entries. The `scope` field in `EvalContext` tells you what scope you're running in, and you can filter `entries` by `_source` if you need scope-specific data:
+
+```js
+// Subagent-scoped eval that filters to its own entries
+app.eval('explore-thoroughness', ({ entries, subagentId }) => {
+  const myEntries = entries.filter(e => e._source === `agent-${subagentId}`);
+  return {
+    pass: myEntries.length > 5,
+    score: Math.min(myEntries.length / 20, 1),
+  };
+}, { scope: 'subagent', subagentType: 'Explore' });
+```
+
 ### SubagentType Filtering
 
 When you specify `subagentType`, the eval/enrichment only runs for subagents of that type. Subagents of other types will not see the eval panel at all.
 
 ```js
 // Only runs for Explore subagents
-app.eval('explore-thoroughness', ({ entries }) => ({
-  pass: entries.length > 5,
-  score: Math.min(entries.length / 20, 1),
-  message: `${entries.length} entries explored`,
-}), { scope: 'subagent', subagentType: 'Explore' });
+app.eval('explore-thoroughness', ({ entries, subagentId }) => {
+  const myEntries = entries.filter(e => e._source === `agent-${subagentId}`);
+  return {
+    pass: myEntries.length > 5,
+    score: Math.min(myEntries.length / 20, 1),
+    message: `${myEntries.length} entries explored`,
+  };
+}, { scope: 'subagent', subagentType: 'Explore' });
 
 // Runs for all subagent types
 app.eval('agent-efficiency', ({ stats }) => ({
@@ -846,3 +869,4 @@ app.enrich('agent-summary', ({ stats }) => ({
 - Use `app.dashboard.view()` to organize filters into focused groups. Each view gets its own `/dashboard/[viewName]` route.
 - The same filter name can be used in different views without conflict.
 - `app.dashboard.filter()` registers to the "default" view for backward compatibility.
+- `entries` contains combined session + subagent data. Each entry has `_source` (`"session"` or `"agent-{id}"`). Filter by `_source` when you need scoped data.

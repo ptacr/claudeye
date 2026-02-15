@@ -5,6 +5,7 @@ import type { LogEntry, AssistantEntry, UserEntry, QueueOperationEntry } from "@
 function makeUserEntry(ts: number): UserEntry {
   return {
     type: "user",
+    _source: "session",
     uuid: `u-${ts}`,
     parentUuid: null,
     timestamp: new Date(ts).toISOString(),
@@ -21,6 +22,7 @@ function makeAssistantEntry(
 ): AssistantEntry {
   return {
     type: "assistant",
+    _source: "session",
     uuid: `a-${ts}`,
     parentUuid: null,
     timestamp: new Date(ts).toISOString(),
@@ -33,6 +35,7 @@ function makeAssistantEntry(
 function makeQueueEntry(ts: number, label: "Session Started" | "Session Resumed"): QueueOperationEntry {
   return {
     type: "queue-operation",
+    _source: "session",
     uuid: `q-${ts}`,
     parentUuid: null,
     timestamp: new Date(ts).toISOString(),

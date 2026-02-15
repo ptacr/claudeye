@@ -3,7 +3,7 @@
 import { ensureEvalsLoaded } from "@/lib/evals/loader";
 import { getSubagentScopedEnrichers } from "@/lib/evals/enrich-registry";
 import { runAllEnrichers } from "@/lib/evals/enrich-runner";
-import { loadSubagentLog } from "@/app/actions/load-subagent-log";
+import { getCachedSessionLog } from "@/lib/log-entries";
 import { calculateLogStats } from "@/lib/log-stats";
 import { getCachedResult, setCachedResult, hashSubagentFile } from "@/lib/cache";
 import type { EnrichRunSummary } from "@/lib/evals/enrich-types";
@@ -50,13 +50,7 @@ export async function runSubagentEnrichments(
       }
     }
 
-    const logResult = await loadSubagentLog(projectName, sessionId, agentId);
-    if (!logResult.ok) {
-      return { ok: false, error: logResult.error };
-    }
-
-    const entries = logResult.entries;
-    const rawLines = logResult.rawLines;
+    const { entries, rawLines } = await getCachedSessionLog(projectName, sessionId);
     const stats = calculateLogStats(entries);
 
     const summary = await runAllEnrichers(

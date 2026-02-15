@@ -1,9 +1,15 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { getClaudeProjectsPath } from "./paths";
+import { extractSubagentIds } from "./extract-subagent-ids";
+import { resolveSubagentPath } from "./resolve-subagent-path";
 import { runtimeCache } from "./runtime-cache";
 import { formatDate } from "./utils";
 import { formatDuration } from "./format-duration";
+
+// ── Source Tagging ──
+
+export type LogSource = "session" | `agent-${string}`;
 
 // ── Content Block Types (for assistant messages) ──
 
@@ -43,6 +49,7 @@ export type ContentBlock = TextBlock | ToolUseBlock | ThinkingBlock;
 
 export interface UserEntry {
   type: "user";
+  _source: LogSource;
   uuid: string;
   parentUuid: string | null;
   timestamp: string;
@@ -56,6 +63,7 @@ export interface UserEntry {
 
 export interface AssistantEntry {
   type: "assistant";
+  _source: LogSource;
   uuid: string;
   parentUuid: string | null;
   timestamp: string;
@@ -70,6 +78,7 @@ export interface AssistantEntry {
 
 export interface GenericEntry {
   type: "file-history-snapshot" | "progress" | "system";
+  _source: LogSource;
   uuid: string;
   parentUuid: string | null;
   timestamp: string;
@@ -80,6 +89,7 @@ export interface GenericEntry {
 
 export interface QueueOperationEntry {
   type: "queue-operation";
+  _source: LogSource;
   uuid: string;
   parentUuid: string | null;
   timestamp: string;
@@ -105,8 +115,9 @@ function formatTimestamp(date: Date): string {
 }
 
 /** Shared base fields present on every log entry. */
-function baseEntry(raw: Record<string, unknown>, timestamp: string, date: Date) {
+function baseEntry(raw: Record<string, unknown>, timestamp: string, date: Date, source: LogSource) {
   return {
+    _source: source,
     uuid: (raw.uuid as string) || "",
     parentUuid: (raw.parentUuid as string | null) ?? null,
     timestamp,
@@ -129,12 +140,16 @@ function extractToolResultContent(
   return undefined;
 }
 
-export function parseRawLines(fileContent: string): Record<string, unknown>[] {
+export function parseRawLines(fileContent: string, source?: LogSource): Record<string, unknown>[] {
   return fileContent
     .split("\n")
     .filter((line) => line.trim() !== "")
     .flatMap((line) => {
-      try { return [JSON.parse(line) as Record<string, unknown>]; }
+      try {
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        if (source !== undefined) parsed._source = source;
+        return [parsed];
+      }
       catch { return []; }
     });
 }
@@ -142,6 +157,7 @@ export function parseRawLines(fileContent: string): Record<string, unknown>[] {
 export interface SessionLogData {
   entries: LogEntry[];
   rawLines: Record<string, unknown>[];
+  subagentIds: string[];
 }
 
 // ── Parser ──
@@ -151,7 +167,7 @@ export interface SessionLogData {
  * Returns entries sorted by timestamp ascending (earliest first).
  * Tool use blocks are enriched with their corresponding results.
  */
-export function parseLogContent(fileContent: string): LogEntry[] {
+export function parseLogContent(fileContent: string, source: LogSource = "session"): LogEntry[] {
   const lines = fileContent.split("\n").filter((line) => line.trim() !== "");
 
   // Single pass: parse entries and build tool result map simultaneously
@@ -210,7 +226,7 @@ export function parseLogContent(fileContent: string): LogEntry[] {
       // Regular user message
       const content =
         typeof message?.content === "string" ? message.content : "";
-      entries.push({ type: "user", ...baseEntry(raw, timestamp, date), message: { role: "user", content } });
+      entries.push({ type: "user", ...baseEntry(raw, timestamp, date, source), message: { role: "user", content } });
       continue;
     }
 
@@ -252,21 +268,21 @@ export function parseLogContent(fileContent: string): LogEntry[] {
 
       entries.push({
         type: "assistant",
-        ...baseEntry(raw, timestamp, date),
+        ...baseEntry(raw, timestamp, date, source),
         message: { role: "assistant", content, model: message?.model as string | undefined },
       });
       continue;
     }
 
     if (type === "file-history-snapshot" || type === "progress" || type === "system") {
-      entries.push({ type, ...baseEntry(raw, timestamp, date), raw: { ...raw } });
+      entries.push({ type, ...baseEntry(raw, timestamp, date, source), raw: { ...raw } });
       continue;
     }
 
     if (type === "queue-operation") {
       const label = seenQueue ? "Session Resumed" : "Session Started";
       seenQueue = true;
-      entries.push({ type: "queue-operation", ...baseEntry(raw, timestamp, date), label });
+      entries.push({ type: "queue-operation", ...baseEntry(raw, timestamp, date, source), label });
       continue;
     }
   }
@@ -305,6 +321,8 @@ export function parseLogContent(fileContent: string): LogEntry[] {
 
 /**
  * Reads and parses a session JSONL log file.
+ * Eagerly loads all subagent JSONL files and merges them into a single
+ * entries/rawLines array with `_source` markers.
  */
 export async function parseSessionLog(
   projectName: string,
@@ -313,10 +331,44 @@ export async function parseSessionLog(
   const projectsPath = getClaudeProjectsPath();
   const filePath = join(projectsPath, projectName, `${sessionId}.jsonl`);
   const fileContent = await readFile(filePath, "utf-8");
-  return {
-    entries: parseLogContent(fileContent),
-    rawLines: parseRawLines(fileContent),
-  };
+
+  const sessionEntries = parseLogContent(fileContent, "session");
+  const sessionRawLines = parseRawLines(fileContent, "session");
+
+  const subagentIds = extractSubagentIds(fileContent);
+  if (subagentIds.length === 0) {
+    return { entries: sessionEntries, rawLines: sessionRawLines, subagentIds: [] };
+  }
+
+  // Load all subagent files in parallel
+  const results = await Promise.allSettled(
+    subagentIds.map(async (agentId) => {
+      const agentSource: LogSource = `agent-${agentId}`;
+      const agentPath = await resolveSubagentPath(projectsPath, projectName, sessionId, agentId);
+      if (!agentPath) return null;
+      const agentContent = await readFile(agentPath, "utf-8");
+      return {
+        entries: parseLogContent(agentContent, agentSource),
+        rawLines: parseRawLines(agentContent, agentSource),
+      };
+    })
+  );
+
+  // Combine all entries and rawLines
+  const allEntries = [...sessionEntries];
+  const allRawLines = [...sessionRawLines];
+
+  for (const result of results) {
+    if (result.status === "fulfilled" && result.value) {
+      allEntries.push(...result.value.entries);
+      allRawLines.push(...result.value.rawLines);
+    }
+  }
+
+  // Sort combined entries by timestamp
+  allEntries.sort((a, b) => a.timestampMs - b.timestampMs);
+
+  return { entries: allEntries, rawLines: allRawLines, subagentIds };
 }
 
 export const getCachedSessionLog = runtimeCache(

@@ -13,6 +13,7 @@ export interface EvalContentBlock {
 /** Minimal log entry (structural match for LogEntry from log-entries). */
 export interface EvalLogEntry {
   type: string;
+  _source?: string;
   uuid: string;
   parentUuid: string | null;
   timestamp: string;

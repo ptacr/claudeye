@@ -19,6 +19,7 @@ import EnrichmentResultsPanel from "@/app/components/enrichment-results-panel";
 
 interface VirtualizedEntryListProps {
   entries: LogEntry[];
+  allEntries: LogEntry[];
   projectName: string;
   sessionId: string;
 }
@@ -84,7 +85,7 @@ function filterVisibleEntries(entries: LogEntry[], collapsedSessions: Set<string
   });
 }
 
-function VirtualizedEntryList({ entries, projectName, sessionId }: VirtualizedEntryListProps) {
+function VirtualizedEntryList({ entries, allEntries, projectName, sessionId }: VirtualizedEntryListProps) {
   const [collapsedSessions, setCollapsedSessions] = useState<Set<string>>(new Set());
   const [scrollMargin, setScrollMargin] = useState(0);
 
@@ -152,6 +153,7 @@ function VirtualizedEntryList({ entries, projectName, sessionId }: VirtualizedEn
               ) : (
                 <EntryRow
                   entry={entry}
+                  allEntries={allEntries}
                   projectName={projectName}
                   sessionId={sessionId}
                 />
@@ -173,22 +175,28 @@ interface RawLogViewerProps {
 }
 
 export default function RawLogViewer({ entries, projectName, sessionId }: RawLogViewerProps) {
+  const sessionEntries = useMemo(
+    () => entries.filter(e => e._source === "session"),
+    [entries]
+  );
+
   return (
     <div className="space-y-4">
-      <StatsBar entries={entries} />
+      <StatsBar entries={sessionEntries} />
 
       <EvalResultsPanel projectName={projectName} sessionId={sessionId} />
 
       <EnrichmentResultsPanel projectName={projectName} sessionId={sessionId} />
 
       <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
-        {entries.length === 0 ? (
+        {sessionEntries.length === 0 ? (
           <p className="text-muted-foreground text-center py-8">
             No entries found.
           </p>
         ) : (
           <VirtualizedEntryList
-            entries={entries}
+            entries={sessionEntries}
+            allEntries={entries}
             projectName={projectName}
             sessionId={sessionId}
           />

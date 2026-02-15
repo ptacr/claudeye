@@ -19,6 +19,7 @@ describe("formatRaw", () => {
   it("pretty-prints generic entry raw data as JSON", () => {
     const entry: GenericEntry = {
       type: "progress",
+      _source: "session",
       uuid: "u1",
       parentUuid: null,
       timestamp: "2024-01-01T00:00:00Z",
@@ -55,6 +56,7 @@ describe("formatLocalTimestamp", () => {
 
 describe("getEntryTextContent", () => {
   const base = {
+    _source: "session" as const,
     uuid: "u1",
     parentUuid: null,
     timestamp: "2024-01-01T00:00:00Z",

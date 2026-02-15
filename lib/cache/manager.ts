@@ -1,5 +1,5 @@
 import { LocalCacheBackend } from "./local-backend";
-import { hashSessionFile, hashEvalsModule } from "./hash";
+import { hashSessionFile, hashEvalsModule, hashProjectsPath } from "./hash";
 import type { CacheBackend, CacheEntry } from "./types";
 
 const BACKEND_KEY = "__CLAUDEYE_CACHE_BACKEND__";
@@ -35,12 +35,13 @@ export function initCacheBackend(): CacheBackend | null {
 }
 
 /**
- * Build a composite cache key.
- * For session-level results:  "evals/my-project/uuid-here"
- * For subagent-level results: "evals/my-project/uuid-here/agent-abc123"
+ * Build a composite cache key, namespaced by a hash of the projects-path.
+ * For session-level results:  "a1b2c3d4/evals/my-project/uuid-here"
+ * For subagent-level results: "a1b2c3d4/evals/my-project/uuid-here/agent-abc123"
  */
-function cacheKey(kind: "evals" | "enrichments", projectName: string, sessionKey: string): string {
-  return `${kind}/${projectName}/${sessionKey}`;
+function cacheKey(kind: string, projectName: string, sessionKey: string): string {
+  const prefix = hashProjectsPath();
+  return `${prefix}/${kind}/${projectName}/${sessionKey}`;
 }
 
 /**
@@ -49,7 +50,7 @@ function cacheKey(kind: "evals" | "enrichments", projectName: string, sessionKey
  * When `overrideContentHash` is provided, it is used instead of computing via `hashSessionFile()`.
  */
 export async function getCachedResult<T>(
-  kind: "evals" | "enrichments",
+  kind: string,
   projectName: string,
   sessionKey: string,
   registeredNames: string[],
@@ -92,7 +93,7 @@ export async function getCachedResult<T>(
  * When `overrideContentHash` is provided, it is used instead of computing via `hashSessionFile()`.
  */
 export async function setCachedResult<T>(
-  kind: "evals" | "enrichments",
+  kind: string,
   projectName: string,
   sessionKey: string,
   value: T,

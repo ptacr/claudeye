@@ -20,7 +20,7 @@ import { getCachedResult, setCachedResult } from "@/lib/cache";
 import type { EvalLogStats } from "@/lib/evals/types";
 
 export async function runSessionAction<TSummary>(opts: {
-  kind: "evals" | "enrichments";
+  kind: string;
   projectName: string;
   sessionId: string;
   forceRefresh: boolean;

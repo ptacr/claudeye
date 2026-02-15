@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { parseLogContent } from "@/lib/log-entries";
+import { parseLogContent, parseRawLines } from "@/lib/log-entries";
 import type { UserEntry, AssistantEntry, GenericEntry, QueueOperationEntry } from "@/lib/log-entries";
 
 // Helper to create a JSONL line
@@ -514,5 +514,89 @@ describe("parseLogContent", () => {
       expect(entries[0].timestampMs).toBeLessThan(entries[1].timestampMs);
       expect(entries[1].timestampMs).toBeLessThan(entries[2].timestampMs);
     });
+  });
+
+  describe("_source tagging", () => {
+    it("defaults _source to 'session' when no source param", () => {
+      const content = line({
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        timestamp: "2024-06-15T12:00:00.000Z",
+        message: { role: "user", content: "Hello" },
+      });
+      const entries = parseLogContent(content);
+      expect(entries[0]._source).toBe("session");
+    });
+
+    it("tags entries with explicit source param", () => {
+      const content = line({
+        type: "user",
+        uuid: "u1",
+        parentUuid: null,
+        timestamp: "2024-06-15T12:00:00.000Z",
+        message: { role: "user", content: "Hello" },
+      });
+      const entries = parseLogContent(content, "agent-abc123");
+      expect(entries[0]._source).toBe("agent-abc123");
+    });
+
+    it("tags all entry types with _source", () => {
+      const content = [
+        line({
+          type: "queue-operation",
+          uuid: "q1",
+          parentUuid: null,
+          timestamp: "2024-06-15T12:00:00.000Z",
+        }),
+        line({
+          type: "user",
+          uuid: "u1",
+          parentUuid: null,
+          timestamp: "2024-06-15T12:00:01.000Z",
+          message: { role: "user", content: "hi" },
+        }),
+        line({
+          type: "assistant",
+          uuid: "a1",
+          parentUuid: "u1",
+          timestamp: "2024-06-15T12:00:02.000Z",
+          message: {
+            role: "assistant",
+            content: [{ type: "text", text: "hey" }],
+          },
+        }),
+        line({
+          type: "system",
+          uuid: "s1",
+          parentUuid: null,
+          timestamp: "2024-06-15T12:00:03.000Z",
+          info: "startup",
+        }),
+      ].join("\n");
+      const entries = parseLogContent(content, "agent-xyz");
+      for (const entry of entries) {
+        expect(entry._source).toBe("agent-xyz");
+      }
+    });
+  });
+});
+
+describe("parseRawLines", () => {
+  it("injects _source when source param provided", () => {
+    const content = [
+      line({ type: "user", timestamp: "2024-06-15T12:00:00.000Z" }),
+      line({ type: "assistant", timestamp: "2024-06-15T12:00:01.000Z" }),
+    ].join("\n");
+    const rawLines = parseRawLines(content, "agent-abc");
+    expect(rawLines).toHaveLength(2);
+    expect(rawLines[0]._source).toBe("agent-abc");
+    expect(rawLines[1]._source).toBe("agent-abc");
+  });
+
+  it("does not inject _source when source param omitted", () => {
+    const content = line({ type: "user", timestamp: "2024-06-15T12:00:00.000Z" });
+    const rawLines = parseRawLines(content);
+    expect(rawLines[0]._source).toBeUndefined();
   });
 });

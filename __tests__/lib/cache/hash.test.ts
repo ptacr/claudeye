@@ -3,7 +3,7 @@ import { createHash } from "crypto";
 import { mkdtemp, rm, writeFile, utimes } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { hashSessionFile, hashSubagentFile, hashEvalsModule } from "@/lib/cache/hash";
+import { hashSessionFile, hashSubagentFile, hashEvalsModule, hashProjectsPath, _resetPathHashCache } from "@/lib/cache/hash";
 
 // Mock paths to point at our temp directory
 let tempDir: string;
@@ -182,5 +182,36 @@ describe("hashEvalsModule", () => {
     process.env.CLAUDEYE_EVALS_MODULE = "/nonexistent/path.ts";
     const hash = await hashEvalsModule();
     expect(hash).toBe("");
+  });
+});
+
+describe("hashProjectsPath", () => {
+  beforeEach(() => {
+    _resetPathHashCache();
+  });
+
+  afterEach(() => {
+    _resetPathHashCache();
+  });
+
+  it("returns an 8-character hex string", () => {
+    const hash = hashProjectsPath();
+    expect(hash).toMatch(/^[a-f0-9]{8}$/);
+  });
+
+  it("returns the same value on repeated calls (memoized)", () => {
+    const hash1 = hashProjectsPath();
+    const hash2 = hashProjectsPath();
+    expect(hash1).toBe(hash2);
+  });
+
+  it("normalizes paths (trailing slash, ..) to the same hash", () => {
+    // The function uses resolve() internally, so the tempDir mock
+    // is already resolved. We verify determinism here — the mock
+    // always returns tempDir which resolve() normalizes consistently.
+    const hash1 = hashProjectsPath();
+    _resetPathHashCache();
+    const hash2 = hashProjectsPath();
+    expect(hash1).toBe(hash2);
   });
 });

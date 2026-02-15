@@ -6,10 +6,12 @@ import { runAllFilters } from "@/lib/evals/dashboard-runner";
 import { getCachedSessionLog } from "@/lib/log-entries";
 import { calculateLogStats } from "@/lib/log-stats";
 import { getCachedProjectFolders, getCachedSessionFiles } from "@/lib/projects";
+import { getCachedResult, setCachedResult, hashSessionFile } from "@/lib/cache";
 import { formatDate } from "@/lib/utils";
 import type {
   DashboardPayload,
   DashboardSessionRow,
+  FilterComputeSummary,
   FilterMeta,
   FilterValue,
 } from "@/lib/evals/dashboard-types";
@@ -42,6 +44,7 @@ export async function computeDashboard(viewName?: string): Promise<DashboardActi
     const sessions: DashboardSessionRow[] = [];
     // Collect all values per filter name for meta computation
     const allValues: Record<string, FilterValue[]> = {};
+    const filterNames = filters.map((f) => f.name);
     for (const f of filters) {
       allValues[f.name] = [];
     }
@@ -70,9 +73,37 @@ export async function computeDashboard(viewName?: string): Promise<DashboardActi
       const batchResults = await Promise.allSettled(
         batch.map(async ({ project, file }) => {
           const sid = file.sessionId as string;
-          const { entries, rawLines } = await getCachedSessionLog(project.name, sid);
-          const stats = calculateLogStats(entries);
-          const summary = await runAllFilters(rawLines, stats, project.name, sid, filters);
+          const cacheSessionKey = `${viewName ?? "default"}/${sid}`;
+
+          // Compute content hash with the real session ID (not the composite cache key)
+          // so hashSessionFile resolves to the actual JSONL file on disk.
+          let contentHash: string;
+          try {
+            contentHash = await hashSessionFile(project.name, sid);
+          } catch {
+            contentHash = "";
+          }
+
+          // Try cache first
+          const cached = await getCachedResult<FilterComputeSummary>(
+            "filters",
+            project.name,
+            cacheSessionKey,
+            filterNames,
+            contentHash,
+          );
+
+          let summary: FilterComputeSummary;
+          if (cached) {
+            summary = cached.value;
+          } else {
+            const { entries, rawLines } = await getCachedSessionLog(project.name, sid);
+            const stats = calculateLogStats(entries);
+            summary = await runAllFilters(rawLines, stats, project.name, sid, filters);
+
+            // Store in cache (fire-and-forget)
+            setCachedResult("filters", project.name, cacheSessionKey, summary, filterNames, contentHash);
+          }
 
           const filterValues: Record<string, FilterValue> = {};
           const values: Record<string, FilterValue[]> = {};

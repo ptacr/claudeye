@@ -99,6 +99,32 @@ describe("LocalCacheBackend", () => {
     expect(entry!.value).toEqual(value);
   });
 
+  it("stores and retrieves deeper namespaced keys", async () => {
+    const key = "ab12cd34/evals/project-a/session-1";
+    const value = { passCount: 5, failCount: 0 };
+    await backend.set(key, value, makeMeta());
+
+    const entry = await backend.get(key);
+    expect(entry).not.toBeNull();
+    expect(entry!.value).toEqual(value);
+  });
+
+  it("invalidateByPrefix works with namespaced keys", async () => {
+    await backend.set("ab12cd34/evals/project-a/s1", { id: 1 }, makeMeta());
+    await backend.set("ab12cd34/evals/project-a/s2", { id: 2 }, makeMeta());
+    await backend.set("ab12cd34/filters/project-a/s1", { id: 3 }, makeMeta());
+    await backend.set("ef56ab78/evals/project-a/s1", { id: 4 }, makeMeta());
+
+    await backend.invalidateByPrefix("ab12cd34/evals/project-a/");
+
+    expect(await backend.get("ab12cd34/evals/project-a/s1")).toBeNull();
+    expect(await backend.get("ab12cd34/evals/project-a/s2")).toBeNull();
+    // Different kind under same namespace — untouched
+    expect(await backend.get("ab12cd34/filters/project-a/s1")).not.toBeNull();
+    // Different namespace — untouched
+    expect(await backend.get("ef56ab78/evals/project-a/s1")).not.toBeNull();
+  });
+
   it("close is a no-op and does not throw", async () => {
     await expect(backend.close()).resolves.toBeUndefined();
   });
