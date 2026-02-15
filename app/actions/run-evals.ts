@@ -3,7 +3,7 @@
 import { getSessionScopedEvals } from "@/lib/evals/registry";
 import { runAllEvals } from "@/lib/evals/runner";
 import { runSessionAction } from "./run-session-action";
-import type { EvalRunSummary } from "@/lib/evals/types";
+import type { EvalRunSummary, EvalRunResult } from "@/lib/evals/types";
 
 export type EvalActionResult =
   | { ok: true; summary: EvalRunSummary; hasEvals: true; cached: boolean }
@@ -19,7 +19,7 @@ export async function runEvals(
   sessionId: string,
   forceRefresh: boolean = false,
 ): Promise<EvalActionResult> {
-  const result = await runSessionAction<EvalRunSummary>({
+  const result = await runSessionAction<any, EvalRunResult, EvalRunSummary>({
     kind: "evals",
     projectName,
     sessionId,
@@ -27,6 +27,17 @@ export async function runEvals(
     getItems: getSessionScopedEvals,
     run: (rawLines, stats, items) =>
       runAllEvals(rawLines, stats, projectName, sessionId, items as any, { source: 'session' }),
+    buildSummary: (results, totalDurationMs) => {
+      let passCount = 0, failCount = 0, errorCount = 0, skippedCount = 0;
+      for (const r of results) {
+        if (r.skipped) skippedCount++;
+        else if (r.error) errorCount++;
+        else if (r.pass) passCount++;
+        else failCount++;
+      }
+      return { results, totalDurationMs, passCount, failCount, errorCount, skippedCount };
+    },
+    extractResults: (summary) => summary.results,
   });
 
   if (!result.ok) return result;

@@ -4,6 +4,7 @@ import React, { useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { login } from "@/app/actions/auth";
 import { Logo } from "@/components/logo";
+import Link from "next/link";
 
 export default function LoginPage() {
   const searchParams = useSearchParams();
@@ -33,7 +34,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm rounded-lg border border-border bg-card p-8 shadow-lg">
         <div className="flex flex-col items-center gap-2 mb-6">
-          <Logo width={36} height={36} />
+          <Link href="/"><Logo width={36} height={36} /></Link>
           <h2 className="text-xl font-semibold text-foreground">Sign in to Claudeye</h2>
           <p className="text-sm text-muted-foreground">Enter your credentials to continue</p>
         </div>

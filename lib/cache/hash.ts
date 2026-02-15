@@ -71,6 +71,15 @@ export async function hashSubagentFile(
 }
 
 /**
+ * Hashes an individual item's function code using SHA-256 of fn.toString().
+ * Detects when a specific eval/enricher function has been modified,
+ * without invalidating other items in the same module.
+ */
+export function hashItemCode(fn: Function): string {
+  return createHash("sha256").update(fn.toString()).digest("hex");
+}
+
+/**
  * Hashes the evals module file content. These files are small,
  * so a full content hash is fine.
  * Returns empty string if no evals module is configured.

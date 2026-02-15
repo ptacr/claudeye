@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.3
+
+### Per-Item Caching for Evals and Enrichments
+
+- **Performance:** Evals and enrichments are now cached per item instead of as a single blob per session. Adding a new eval or enrichment only runs the new one — existing unchanged items load from cache instantly.
+- Previously, adding a single eval invalidated the entire cache (due to `registeredNames` and `evalsModuleHash` checks), forcing all evals to re-run. Now each item is cached independently using its function's code hash (`fn.toString()` → SHA-256).
+- New cache key format: `<prefix>/<kind>/<project>/<session>/item/<itemName>`
+- New cache functions: `getPerItemCache()`, `setPerItemCache()`, `hashItemCode()`
+- New types: `ItemCacheMeta`, `ItemCacheEntry`
+- Session-level actions (`runEvals`, `runEnrichments`) and subagent-level actions (`runSubagentEvals`, `runSubagentEnrichments`) all use per-item caching
+- Existing `getCachedResult` / `setCachedResult` retained for backward compatibility (used by dashboard filters)
+
 ## 0.5.2
 
 - **Breaking:** `subagentId` removed from `EvalContext`. Use `source` field instead — it directly matches `entry._source` (`"session"` or `"agent-{id}"`)

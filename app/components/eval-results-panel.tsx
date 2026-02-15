@@ -10,6 +10,7 @@ import {
   BarChart3,
   RefreshCw,
   ChevronRight,
+  ChevronDown,
 } from "lucide-react";
 import { CopyButton } from "@/app/components/copy-button";
 import { runEvals } from "@/app/actions/run-evals";
@@ -106,6 +107,7 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
   const [error, setError] = useState<string | null>(null);
   const [noEvals, setNoEvals] = useState(false);
   const [cached, setCached] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
 
   const run = useCallback(async (forceRefresh = false) => {
@@ -183,65 +185,73 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
   if (visibleResults.length === 0) return null;
 
   return (
-    <div className={`bg-card border border-border rounded-lg ${panelPadding} space-y-3`}>
+    <div className={`bg-card border border-border rounded-lg ${panelPadding} ${collapsed ? "" : "space-y-3"}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <button
+          onClick={() => setCollapsed((prev) => !prev)}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+        >
+          <ChevronDown
+            className={`w-4 h-4 text-muted-foreground transition-transform ${collapsed ? "-rotate-90" : ""}`}
+          />
           <BarChart3 className="w-4 h-4 text-primary" />
           <span className="text-sm font-medium">Eval Results</span>
-        </div>
-        <button
-          onClick={() => run(true)}
-          disabled={loading}
-          className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
-        >
-          {loading ? (
-            <RefreshCw className="w-3 h-3 animate-spin" />
-          ) : (
-            <Play className="w-3 h-3" />
-          )}
-          {loading ? "Running..." : "Re-run"}
         </button>
+        <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 text-xs">
+            <div className="flex items-center gap-1.5">
+              <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+              <span className="font-medium">{summary.passCount}</span>
+              <span className="text-muted-foreground">passed</span>
+            </div>
+            {summary.failCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <XCircle className="w-3.5 h-3.5 text-red-500" />
+                <span className="font-medium">{summary.failCount}</span>
+                <span className="text-muted-foreground">failed</span>
+              </div>
+            )}
+            {summary.errorCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
+                <span className="font-medium">{summary.errorCount}</span>
+                <span className="text-muted-foreground">errored</span>
+              </div>
+            )}
+            <div className="flex items-center gap-1.5">
+              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
+              <span className="text-muted-foreground">{summary.totalDurationMs}ms</span>
+              {cached && (
+                <span className="text-[10px] font-medium text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded">
+                  cached
+                </span>
+              )}
+            </div>
+          </div>
+          <button
+            onClick={() => run(true)}
+            disabled={loading}
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
+          >
+            {loading ? (
+              <RefreshCw className="w-3 h-3 animate-spin" />
+            ) : (
+              <Play className="w-3 h-3" />
+            )}
+            {loading ? "Running..." : "Re-run"}
+          </button>
+        </div>
       </div>
 
-      {/* Summary bar */}
-      <div className="flex items-center gap-4 text-xs">
-        <div className="flex items-center gap-1.5">
-          <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-          <span className="font-medium">{summary.passCount}</span>
-          <span className="text-muted-foreground">passed</span>
+      {/* Summary bar + Results list (collapsible) */}
+      {!collapsed && (
+        <div className="divide-y divide-border/50">
+          {visibleResults.map((result) => (
+            <EvalResultRow key={result.name} result={result} />
+          ))}
         </div>
-        {summary.failCount > 0 && (
-          <div className="flex items-center gap-1.5">
-            <XCircle className="w-3.5 h-3.5 text-red-500" />
-            <span className="font-medium">{summary.failCount}</span>
-            <span className="text-muted-foreground">failed</span>
-          </div>
-        )}
-        {summary.errorCount > 0 && (
-          <div className="flex items-center gap-1.5">
-            <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
-            <span className="font-medium">{summary.errorCount}</span>
-            <span className="text-muted-foreground">errored</span>
-          </div>
-        )}
-        <div className="flex items-center gap-1.5 ml-auto">
-          <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">{summary.totalDurationMs}ms</span>
-          {cached && (
-            <span className="text-[10px] font-medium text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded">
-              cached
-            </span>
-          )}
-        </div>
-      </div>
-
-      {/* Results list */}
-      <div className="divide-y divide-border/50">
-        {visibleResults.map((result) => (
-          <EvalResultRow key={result.name} result={result} />
-        ))}
-      </div>
+      )}
     </div>
   );
 }

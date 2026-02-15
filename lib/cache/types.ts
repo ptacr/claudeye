@@ -23,3 +23,16 @@ export interface CacheEntry<T> {
   value: T;
   meta: CacheMeta;
 }
+
+/** Metadata for a per-item cache entry (one eval/enricher result). */
+export interface ItemCacheMeta {
+  cachedAt: string;
+  contentHash: string;    // session file mtime+size hash (same as CacheMeta)
+  itemCodeHash: string;   // SHA-256 of fn.toString() — detects function code changes
+}
+
+/** A single item's cached result with per-item metadata. */
+export interface ItemCacheEntry<T> {
+  value: T;
+  meta: ItemCacheMeta;
+}

@@ -5,20 +5,24 @@ vi.mock("@/lib/cache/hash", () => ({
   hashSessionFile: vi.fn(),
   hashEvalsModule: vi.fn(),
   hashProjectsPath: vi.fn().mockReturnValue("ab12cd34"),
+  hashItemCode: vi.fn(),
 }));
 
-import { hashSessionFile, hashEvalsModule, hashProjectsPath } from "@/lib/cache/hash";
+import { hashSessionFile, hashEvalsModule, hashProjectsPath, hashItemCode } from "@/lib/cache/hash";
 import {
   initCacheBackend,
   getCachedResult,
   setCachedResult,
+  getPerItemCache,
+  setPerItemCache,
   closeCacheBackend,
 } from "@/lib/cache/manager";
-import type { CacheMeta } from "@/lib/cache/types";
+import type { CacheMeta, ItemCacheMeta } from "@/lib/cache/types";
 
 const mockHashSession = vi.mocked(hashSessionFile);
 const mockHashEvals = vi.mocked(hashEvalsModule);
 const mockHashPath = vi.mocked(hashProjectsPath);
+const mockHashItemCode = vi.mocked(hashItemCode);
 
 const BACKEND_KEY = "__CLAUDEYE_CACHE_BACKEND__";
 const DISABLED_KEY = "__CLAUDEYE_CACHE_DISABLED__";
@@ -229,6 +233,114 @@ describe("cache manager", () => {
 
       expect(evalResult!.value).toEqual({ type: "eval" });
       expect(filterResult!.value).toEqual({ type: "filter" });
+    });
+  });
+
+  describe("getPerItemCache / setPerItemCache", () => {
+    it("returns null when cache is disabled", async () => {
+      process.env.CLAUDEYE_CACHE = "off";
+      const result = await getPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1");
+      expect(result).toBeNull();
+    });
+
+    it("returns null on cache miss", async () => {
+      const result = await getPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", "content-hash-1");
+      expect(result).toBeNull();
+    });
+
+    it("returns cached value when contentHash + itemCodeHash match", async () => {
+      const value = { name: "eval-1", pass: true, score: 1, durationMs: 5 };
+      await setPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", value, "content-hash-1");
+
+      const result = await getPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", "content-hash-1");
+      expect(result).not.toBeNull();
+      expect(result!.value).toEqual(value);
+      expect(result!.cached).toBe(true);
+    });
+
+    it("returns null when contentHash changes (session data changed)", async () => {
+      const value = { name: "eval-1", pass: true, score: 1, durationMs: 5 };
+      await setPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", value, "content-hash-1");
+
+      const result = await getPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", "content-hash-2");
+      expect(result).toBeNull();
+    });
+
+    it("returns null when itemCodeHash changes (function code edited)", async () => {
+      const value = { name: "eval-1", pass: true, score: 1, durationMs: 5 };
+      await setPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", value, "content-hash-1");
+
+      const result = await getPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-2", "content-hash-1");
+      expect(result).toBeNull();
+    });
+
+    it("adding a new item doesn't invalidate existing items' caches", async () => {
+      const value1 = { name: "eval-1", pass: true, score: 1, durationMs: 5 };
+      const value2 = { name: "eval-2", pass: false, score: 0, durationMs: 10 };
+
+      await setPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", value1, "content-hash-1");
+      await setPerItemCache("evals", "proj", "sess", "eval-2", "code-hash-2", value2, "content-hash-1");
+
+      // Both should still be retrievable independently
+      const result1 = await getPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", "content-hash-1");
+      const result2 = await getPerItemCache("evals", "proj", "sess", "eval-2", "code-hash-2", "content-hash-1");
+
+      expect(result1!.value).toEqual(value1);
+      expect(result2!.value).toEqual(value2);
+
+      // Adding a third item doesn't affect the first two
+      const value3 = { name: "eval-3", pass: true, score: 0.5, durationMs: 3 };
+      await setPerItemCache("evals", "proj", "sess", "eval-3", "code-hash-3", value3, "content-hash-1");
+
+      const result1Again = await getPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", "content-hash-1");
+      expect(result1Again!.value).toEqual(value1);
+    });
+
+    it("items are isolated — different names don't collide", async () => {
+      const valueA = { name: "eval-a", data: "A" };
+      const valueB = { name: "eval-b", data: "B" };
+
+      await setPerItemCache("evals", "proj", "sess", "eval-a", "code-a", valueA, "content-hash-1");
+      await setPerItemCache("evals", "proj", "sess", "eval-b", "code-b", valueB, "content-hash-1");
+
+      const resultA = await getPerItemCache("evals", "proj", "sess", "eval-a", "code-a", "content-hash-1");
+      const resultB = await getPerItemCache("evals", "proj", "sess", "eval-b", "code-b", "content-hash-1");
+
+      expect(resultA!.value).toEqual(valueA);
+      expect(resultB!.value).toEqual(valueB);
+    });
+
+    it("uses overrideContentHash instead of hashSessionFile when provided", async () => {
+      const value = { name: "eval-1", pass: true };
+      await setPerItemCache("evals", "proj", "sess/agent-abc", "eval-1", "code-hash-1", value, "subagent-hash-1");
+
+      mockHashSession.mockClear();
+
+      const result = await getPerItemCache("evals", "proj", "sess/agent-abc", "eval-1", "code-hash-1", "subagent-hash-1");
+      expect(result).not.toBeNull();
+      expect(result!.value).toEqual(value);
+      expect(mockHashSession).not.toHaveBeenCalled();
+    });
+
+    it("does not throw when cache is disabled on set", async () => {
+      process.env.CLAUDEYE_CACHE = "off";
+      await expect(
+        setPerItemCache("evals", "proj", "sess", "eval-1", "code-hash-1", { data: true }, "content-hash-1"),
+      ).resolves.toBeUndefined();
+    });
+
+    it("isolates evals from enrichments at per-item level", async () => {
+      const evalValue = { name: "item-1", type: "eval" };
+      const enrichValue = { name: "item-1", type: "enrich" };
+
+      await setPerItemCache("evals", "proj", "sess", "item-1", "code-1", evalValue, "content-hash-1");
+      await setPerItemCache("enrichments", "proj", "sess", "item-1", "code-1", enrichValue, "content-hash-1");
+
+      const evalResult = await getPerItemCache("evals", "proj", "sess", "item-1", "code-1", "content-hash-1");
+      const enrichResult = await getPerItemCache("enrichments", "proj", "sess", "item-1", "code-1", "content-hash-1");
+
+      expect(evalResult!.value).toEqual(evalValue);
+      expect(enrichResult!.value).toEqual(enrichValue);
     });
   });
 

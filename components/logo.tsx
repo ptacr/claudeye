@@ -4,7 +4,6 @@
 import React from "react";
 import Image from "next/image";
 import { useTheme } from "@/contexts/ThemeContext";
-import Link from "next/link";
 
 interface LogoProps {
   width?: number;
@@ -24,16 +23,14 @@ export const Logo: React.FC<LogoProps> = ({
     theme === "light" ? "/exospheresmall-dark.png" : "/exospheresmall.png";
 
   return (
-    <Link href="/" className="flex items-center">
-      <Image
-        src={logoSrc}
-        alt="Exosphere Logo"
-        width={width}
-        height={height}
-        className={className}
-        priority
-      />
-    </Link>
+    <Image
+      src={logoSrc}
+      alt="Exosphere Logo"
+      width={width}
+      height={height}
+      className={className}
+      priority
+    />
   );
 };
 

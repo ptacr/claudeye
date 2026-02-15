@@ -33,23 +33,17 @@ export const Navbar: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center gap-3">
-            <Logo width={28} height={28} className="flex-shrink-0" />
-            <div className="flex flex-col">
+            <a
+              href="https://claude.exosphere.host"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-3 hover:opacity-80 transition-opacity"
+            >
+              <Logo width={28} height={28} className="flex-shrink-0" />
               <h1 className="text-lg font-semibold text-foreground leading-tight tracking-tight">
                 Claudeye
               </h1>
-              <p className="text-[0.65rem] text-muted-foreground leading-tight">
-                watchtower for Claude agents by{" "}
-                <a
-                  href="https://exosphere.host"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
-                >
-                  exosphere.host
-                </a>
-              </p>
-            </div>
+            </a>
 
             <div className="w-px h-8 bg-border ml-2" />
 

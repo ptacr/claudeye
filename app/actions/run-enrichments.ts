@@ -3,7 +3,7 @@
 import { getSessionScopedEnrichers } from "@/lib/evals/enrich-registry";
 import { runAllEnrichers } from "@/lib/evals/enrich-runner";
 import { runSessionAction } from "./run-session-action";
-import type { EnrichRunSummary } from "@/lib/evals/enrich-types";
+import type { EnrichRunSummary, EnrichRunResult } from "@/lib/evals/enrich-types";
 
 export type EnrichActionResult =
   | { ok: true; summary: EnrichRunSummary; hasEnrichers: true; cached: boolean }
@@ -19,7 +19,7 @@ export async function runEnrichments(
   sessionId: string,
   forceRefresh: boolean = false,
 ): Promise<EnrichActionResult> {
-  const result = await runSessionAction<EnrichRunSummary>({
+  const result = await runSessionAction<any, EnrichRunResult, EnrichRunSummary>({
     kind: "enrichments",
     projectName,
     sessionId,
@@ -27,6 +27,15 @@ export async function runEnrichments(
     getItems: getSessionScopedEnrichers,
     run: (rawLines, stats, items) =>
       runAllEnrichers(rawLines, stats, projectName, sessionId, items as any, { source: 'session' }),
+    buildSummary: (results, totalDurationMs) => {
+      let errorCount = 0, skippedCount = 0;
+      for (const r of results) {
+        if (r.skipped) skippedCount++;
+        else if (r.error) errorCount++;
+      }
+      return { results, totalDurationMs, errorCount, skippedCount };
+    },
+    extractResults: (summary) => summary.results,
   });
 
   if (!result.ok) return result;

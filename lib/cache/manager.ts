@@ -1,6 +1,6 @@
 import { LocalCacheBackend } from "./local-backend";
 import { hashSessionFile, hashEvalsModule, hashProjectsPath } from "./hash";
-import type { CacheBackend, CacheEntry } from "./types";
+import type { CacheBackend, CacheEntry, ItemCacheEntry } from "./types";
 
 const BACKEND_KEY = "__CLAUDEYE_CACHE_BACKEND__";
 const DISABLED_KEY = "__CLAUDEYE_CACHE_DISABLED__";
@@ -117,6 +117,77 @@ export async function setCachedResult<T>(
     });
   } catch {
     // Cache write failures should never break eval execution
+  }
+}
+
+/**
+ * Build a per-item cache key.
+ * Format: "<prefix>/<kind>/<projectName>/<sessionKey>/item/<itemName>"
+ */
+function itemCacheKey(kind: string, projectName: string, sessionKey: string, itemName: string): string {
+  const prefix = hashProjectsPath();
+  return `${prefix}/${kind}/${projectName}/${sessionKey}/item/${itemName}`;
+}
+
+/**
+ * Look up a single item's cached result. Returns null on any mismatch or miss.
+ * Validates contentHash (session data unchanged) and itemCodeHash (function code unchanged).
+ */
+export async function getPerItemCache<T>(
+  kind: string,
+  projectName: string,
+  sessionKey: string,
+  itemName: string,
+  itemCodeHash: string,
+  overrideContentHash?: string,
+): Promise<(ItemCacheEntry<T> & { cached: true }) | null> {
+  const backend = initCacheBackend();
+  if (!backend) return null;
+
+  try {
+    const entry = await backend.get<T>(itemCacheKey(kind, projectName, sessionKey, itemName));
+    if (!entry) return null;
+
+    const meta = entry.meta as unknown as import("./types").ItemCacheMeta;
+
+    // Validate content hash (session/subagent file changed?)
+    const currentContentHash = overrideContentHash ?? await hashSessionFile(projectName, sessionKey);
+    if (meta.contentHash !== currentContentHash) return null;
+
+    // Validate item code hash (function code changed?)
+    if (meta.itemCodeHash !== itemCodeHash) return null;
+
+    return { value: entry.value, meta, cached: true };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Store a single item's result in cache. Fire-and-forget — errors are swallowed.
+ */
+export async function setPerItemCache<T>(
+  kind: string,
+  projectName: string,
+  sessionKey: string,
+  itemName: string,
+  itemCodeHash: string,
+  value: T,
+  overrideContentHash?: string,
+): Promise<void> {
+  const backend = initCacheBackend();
+  if (!backend) return;
+
+  try {
+    const contentHash = overrideContentHash ?? await hashSessionFile(projectName, sessionKey);
+
+    await backend.set(itemCacheKey(kind, projectName, sessionKey, itemName), value, {
+      cachedAt: new Date().toISOString(),
+      contentHash,
+      itemCodeHash,
+    } as any);
+  } catch {
+    // Cache write failures should never break execution
   }
 }
 

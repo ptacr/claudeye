@@ -7,6 +7,7 @@ import {
   Clock,
   Database,
   RefreshCw,
+  ChevronDown,
 } from "lucide-react";
 import { runEnrichments } from "@/app/actions/run-enrichments";
 import { runSubagentEnrichments } from "@/app/actions/run-subagent-enrichments";
@@ -71,6 +72,7 @@ export default function EnrichmentResultsPanel({ projectName, sessionId, agentId
   const [error, setError] = useState<string | null>(null);
   const [noEnrichers, setNoEnrichers] = useState(false);
   const [cached, setCached] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
 
   const run = useCallback(async (forceRefresh = false) => {
@@ -147,13 +149,19 @@ export default function EnrichmentResultsPanel({ projectName, sessionId, agentId
   if (visibleResults.length === 0) return null;
 
   return (
-    <div className={`bg-card border border-border rounded-lg ${panelPadding} space-y-3`}>
+    <div className={`bg-card border border-border rounded-lg ${panelPadding} ${collapsed ? "" : "space-y-3"}`}>
       {/* Header */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+        <button
+          onClick={() => setCollapsed((prev) => !prev)}
+          className="flex items-center gap-2 hover:opacity-80 transition-opacity"
+        >
+          <ChevronDown
+            className={`w-4 h-4 text-muted-foreground transition-transform ${collapsed ? "-rotate-90" : ""}`}
+          />
           <Database className="w-4 h-4 text-primary" />
           <span className="text-sm font-medium">Enrichment Data</span>
-        </div>
+        </button>
         <div className="flex items-center gap-2">
           {summary.errorCount > 0 && (
             <div className="flex items-center gap-1 text-xs text-yellow-500">
@@ -185,14 +193,16 @@ export default function EnrichmentResultsPanel({ projectName, sessionId, agentId
         </div>
       </div>
 
-      {/* Enricher groups */}
-      <div className="space-y-3 divide-y divide-border/50">
-        {visibleResults.map((result) => (
-          <div key={result.name} className="pt-2 first:pt-0">
-            <EnricherGroup result={result} />
-          </div>
-        ))}
-      </div>
+      {/* Enricher groups (collapsible) */}
+      {!collapsed && (
+        <div className="space-y-3 divide-y divide-border/50">
+          {visibleResults.map((result) => (
+            <div key={result.name} className="pt-2 first:pt-0">
+              <EnricherGroup result={result} />
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
