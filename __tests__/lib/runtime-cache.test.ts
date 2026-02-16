@@ -58,4 +58,95 @@ describe("runtimeCache", () => {
     const result = await cached();
     expect(result).toBe(42);
   });
+
+  describe("LRU eviction with maxSize", () => {
+    it("evicts the least-recently-used entry when maxSize is reached", async () => {
+      let callCount = 0;
+      const fn = vi.fn().mockImplementation(async (x: string) => {
+        callCount++;
+        return `result-${x}-${callCount}`;
+      });
+      const cached = runtimeCache(fn, 60, { maxSize: 3 });
+
+      // Fill the cache to capacity
+      await cached("a"); // cache: [a]
+      await cached("b"); // cache: [a, b]
+      await cached("c"); // cache: [a, b, c]
+      expect(fn).toHaveBeenCalledTimes(3);
+
+      // Access "a" again (should be cached, moves to end)
+      const resultA = await cached("a"); // cache: [b, c, a]
+      expect(fn).toHaveBeenCalledTimes(3); // no new call
+      expect(resultA).toBe("result-a-1");
+
+      // Insert "d" — should evict "b" (least recently used)
+      await cached("d"); // cache: [c, a, d]
+      expect(fn).toHaveBeenCalledTimes(4);
+
+      // "b" should have been evicted — next call should re-compute
+      await cached("b"); // cache: [a, d, b]
+      expect(fn).toHaveBeenCalledTimes(5);
+
+      // "c" should also have been evicted by now
+      await cached("c"); // cache: [d, b, c] — evicts "a"
+      expect(fn).toHaveBeenCalledTimes(6);
+
+      // "a" was evicted, should re-compute
+      await cached("a");
+      expect(fn).toHaveBeenCalledTimes(7);
+    });
+
+    it("does not evict when cache is under maxSize", async () => {
+      const fn = vi.fn().mockImplementation(async (x: string) => `result-${x}`);
+      const cached = runtimeCache(fn, 60, { maxSize: 5 });
+
+      await cached("a");
+      await cached("b");
+      await cached("c");
+      expect(fn).toHaveBeenCalledTimes(3);
+
+      // All should still be cached
+      await cached("a");
+      await cached("b");
+      await cached("c");
+      expect(fn).toHaveBeenCalledTimes(3);
+    });
+
+    it("works with maxSize of 1", async () => {
+      const fn = vi.fn().mockImplementation(async (x: string) => `result-${x}`);
+      const cached = runtimeCache(fn, 60, { maxSize: 1 });
+
+      await cached("a");
+      expect(fn).toHaveBeenCalledTimes(1);
+
+      // "a" is cached
+      await cached("a");
+      expect(fn).toHaveBeenCalledTimes(1);
+
+      // "b" evicts "a"
+      await cached("b");
+      expect(fn).toHaveBeenCalledTimes(2);
+
+      // "a" was evicted
+      await cached("a");
+      expect(fn).toHaveBeenCalledTimes(3);
+    });
+
+    it("without maxSize, cache grows unbounded", async () => {
+      const fn = vi.fn().mockImplementation(async (x: string) => `result-${x}`);
+      const cached = runtimeCache(fn, 60);
+
+      // Insert many entries
+      for (let i = 0; i < 100; i++) {
+        await cached(`key-${i}`);
+      }
+      expect(fn).toHaveBeenCalledTimes(100);
+
+      // All should still be cached
+      for (let i = 0; i < 100; i++) {
+        await cached(`key-${i}`);
+      }
+      expect(fn).toHaveBeenCalledTimes(100);
+    });
+  });
 });

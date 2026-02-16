@@ -306,7 +306,7 @@ The return type auto-determines the UI control:
 | `number` | Range slider | Dual-handle slider with min/max inputs |
 | `string` | Multi-select dropdown | Checkboxes with Select All / Clear |
 
-Filter values are computed server-side (reusing existing caching), then filtering happens client-side for instant interaction.
+Filter values are computed server-side with an incremental index (only new/changed sessions are reprocessed). Filtering and pagination happen server-side, returning only the matching page of results.
 
 ### Examples
 
@@ -364,11 +364,12 @@ app.dashboard.filter('avg-tools-per-turn',
 
 ### How It Works
 
-1. When the `/dashboard` page loads, the server action iterates over all projects and sessions
-2. For each session, it loads the JSONL log, computes stats, and runs all registered filters
-3. Filter metadata is derived automatically: min/max for numbers, unique values for strings
-4. The full payload is sent to the client, which renders tiles and a filterable sessions table
-5. User interactions (toggle, slider, dropdown) filter the table instantly — no server roundtrip
+1. When the `/dashboard` page loads, the server action discovers all projects and sessions
+2. An incremental `DashboardIndex` diffs the discovered sessions against previously computed rows — only new or changed sessions are processed (unchanged sessions are skipped entirely)
+3. For new/changed sessions, it checks the per-session disk cache first, then falls back to parsing the JSONL log and running filters
+4. Filter metadata (min/max for numbers, unique values for strings) is rebuilt from accumulators only when the session set changes
+5. Server-side filtering and pagination are applied — only the matching page of results is sent to the client
+6. User interactions (toggle, slider, dropdown) trigger a debounced (300ms) server re-fetch with the new filter state
 
 ### Global Condition
 
@@ -576,9 +577,13 @@ type FilterMeta =
 
 ```ts
 interface DashboardPayload {
-  sessions: DashboardSessionRow[];  // All sessions with computed filter values
+  sessions: DashboardSessionRow[];  // One page of matching sessions
   filterMeta: FilterMeta[];         // One per registered filter
   totalDurationMs: number;          // Server-side computation time
+  totalCount: number;               // Total sessions before filtering
+  matchingCount: number;            // Total sessions after filtering
+  page: number;                     // Current page (1-based)
+  pageSize: number;                 // Items per page
 }
 
 interface DashboardSessionRow {
@@ -880,7 +885,7 @@ app.enrich('agent-summary', ({ entries, source, stats }) => ({
 - You can mix `app.eval()`, `app.enrich()`, `app.condition()`, `app.dashboard.filter()`, and `app.dashboard.view()` calls freely in the same file.
 - Per-item condition errors are treated as eval/enrichment errors (not skips), so you'll see the error message in the UI.
 - Dashboard filter return types are auto-detected from the first non-null value: `boolean` &rarr; toggle, `number` &rarr; range slider, `string` &rarr; multi-select.
-- Filter values are computed once server-side; all subsequent filtering is instant on the client.
+- Filter values are computed incrementally server-side (only new/changed sessions). Filtering and pagination also happen server-side, with debounced re-fetches on filter changes.
 - Use `app.dashboard.view()` to organize filters into focused groups. Each view gets its own `/dashboard/[viewName]` route.
 - The same filter name can be used in different views without conflict.
 - `app.dashboard.filter()` registers to the "default" view for backward compatibility.

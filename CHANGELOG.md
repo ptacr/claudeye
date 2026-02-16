@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.5
+
+### Performance — High-Performance Dashboard Filters
+
+- **OOM fix:** Dashboard filter computation no longer causes JavaScript heap out-of-memory crashes on large workspaces. Previously, the unbounded runtime cache stored full parsed session data for every session touched, exhausting the Node.js heap.
+- **LRU-bounded runtime cache:** `runtimeCache` now accepts an optional `maxSize` parameter with LRU eviction. `getCachedSessionLog` is capped at 20 entries, preventing unbounded memory growth.
+- **Incremental dashboard index:** A `DashboardIndex` stored in `globalThis` tracks computed rows by session key. On subsequent calls, only new, changed, or deleted sessions are processed — unchanged sessions are skipped entirely (zero I/O). The index invalidates automatically when the evals module or view configuration changes.
+- **Bypass runtime cache for filter computation:** `computeDashboard()` now calls `parseSessionLog()` directly instead of `getCachedSessionLog()`, ensuring parsed JSONL data is garbage-collected immediately after filter computation rather than retained in the runtime cache.
+- **Incremental filter meta accumulators:** Filter metadata (min/max for numbers, unique values for strings) is computed incrementally via accumulators instead of accumulating all values in arrays, reducing memory from O(sessions × filters) to O(unique values).
+
+### Server-Side Filtering & Pagination
+
+- **Server-side filtering:** Filter state is now serialized and sent to the server. The `computeDashboard()` action applies filters server-side and returns only the matching page of results, reducing payload size.
+- **Server-side pagination:** Pagination moved from client to server. Only one page of `DashboardSessionRow` objects crosses the wire per request.
+- **Debounced filter re-fetch:** Client-side filter changes are debounced (300ms) before triggering a server re-fetch, preventing excessive requests during rapid interactions.
+- **Persistent filter metadata:** `filterMeta` is preserved across re-fetches so filter tile UI doesn't flash during updates.
+- **New types:** `SerializedFilterState`, `SerializedFilters` for type-safe server action parameters. `DashboardPayload` extended with `totalCount`, `matchingCount`, `page`, `pageSize`.
+
+### Tests
+
+- **Runtime cache LRU tests:** New unit tests for `runtimeCache` verifying LRU eviction behavior, access-order promotion, and TTL expiry with bounded caches.
+
 ## 0.5.4
 
 ### Performance

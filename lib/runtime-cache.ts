@@ -8,20 +8,43 @@
  *
  * This in-process Map-based cache avoids that problem: entries expire
  * after `revalidateSeconds` and are never persisted to disk.
+ *
+ * Optional `maxSize` enables LRU eviction — when the cache is full,
+ * the least-recently-used entry is evicted before inserting a new one.
  */
+
+export interface RuntimeCacheOptions {
+  maxSize?: number;
+}
+
 export function runtimeCache<TArgs extends unknown[], TResult>(
   fn: (...args: TArgs) => Promise<TResult>,
-  revalidateSeconds: number
+  revalidateSeconds: number,
+  options?: RuntimeCacheOptions,
 ): (...args: TArgs) => Promise<TResult> {
   const cache = new Map<string, { data: TResult; expiry: number }>();
+  const maxSize = options?.maxSize;
 
   return async (...args: TArgs): Promise<TResult> => {
     const key = JSON.stringify(args);
     const entry = cache.get(key);
     if (entry && Date.now() < entry.expiry) {
+      // LRU: move to end (most recently used)
+      if (maxSize) {
+        cache.delete(key);
+        cache.set(key, entry);
+      }
       return entry.data;
     }
+
     const data = await fn(...args);
+
+    // Evict least-recently-used entry if at capacity
+    if (maxSize && cache.size >= maxSize) {
+      const oldestKey = cache.keys().next().value!;
+      cache.delete(oldestKey);
+    }
+
     cache.set(key, { data, expiry: Date.now() + revalidateSeconds * 1000 });
     return data;
   };

@@ -373,5 +373,6 @@ export async function parseSessionLog(
 
 export const getCachedSessionLog = runtimeCache(
   (projectName: string, sessionId: string) => parseSessionLog(projectName, sessionId),
-  60
+  60,
+  { maxSize: 20 },
 );

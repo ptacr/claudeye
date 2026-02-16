@@ -109,7 +109,19 @@ export interface DashboardSessionRow {
 
 /** Full dashboard payload returned by the server action. */
 export interface DashboardPayload {
-  sessions: DashboardSessionRow[];
+  sessions: DashboardSessionRow[];  // One page only
   filterMeta: FilterMeta[];
   totalDurationMs: number;
+  totalCount: number;      // Before filtering
+  matchingCount: number;   // After filtering
+  page: number;
+  pageSize: number;
 }
+
+/** Serializable filter state for server-side filtering (Sets aren't serializable). */
+export type SerializedFilterState =
+  | { type: "boolean"; value: "all" | "true" | "false" }
+  | { type: "number"; min: number; max: number }
+  | { type: "string"; selected: string[] };
+
+export type SerializedFilters = Record<string, SerializedFilterState>;

@@ -204,7 +204,7 @@ app.dashboard.filter('uses-subagents', ({ stats }) => stats.subagentCount > 0,
 );
 ```
 
-Filter return types (`boolean`, `number`, `string`) auto-determine the UI control: toggle tiles, range sliders, or multi-select dropdowns. Values are computed server-side, then filtering happens client-side for instant interaction.
+Filter return types (`boolean`, `number`, `string`) auto-determine the UI control: toggle tiles, range sliders, or multi-select dropdowns. Values are computed server-side with an incremental index that only reprocesses new or changed sessions. Filtering and pagination happen server-side, returning only the matching page of results.
 
 [Read more: Dashboard Views API &rarr;](docs/api-reference.md#appdashboardview-name-options)
 [Read more: Dashboard Filters API &rarr;](docs/api-reference.md#appdashboardfilter-name-fn-options)
@@ -325,7 +325,7 @@ When auth is active, all UI routes redirect to `/login`. After signing in, a sig
 5. Per-item conditions are checked individually. Skipped items don't block others
 6. Each function is individually error-isolated. If one throws, the others still run
 7. Results are serialized and displayed in separate panels in the dashboard UI
-8. Named dashboard views (`/dashboard`) show a view index; each view (`/dashboard/[viewName]`) computes filter values across all projects/sessions, then filters client-side for instant interaction
+8. Named dashboard views (`/dashboard`) show a view index; each view (`/dashboard/[viewName]`) computes filter values incrementally (only new/changed sessions are processed), then filters and paginates server-side for efficiency
 
 ## Contributing
 

@@ -1,18 +1,19 @@
 /** Dashboard sessions table — shows filtered sessions with dynamic filter columns. */
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { File } from "lucide-react";
 import PaginationControls from "@/app/components/pagination-controls";
 import type { DashboardSessionRow, FilterMeta, FilterValue } from "@/lib/evals/dashboard-types";
 
-const ITEMS_PER_PAGE = 25;
-
 interface DashboardSessionsTableProps {
   sessions: DashboardSessionRow[];
   filterMeta: FilterMeta[];
   totalCount: number;
+  matchingCount: number;
+  page: number;
+  pageSize: number;
+  onPageChange: (page: number) => void;
 }
 
 function formatFilterValue(value: FilterValue | undefined): string {
@@ -25,24 +26,25 @@ export default function DashboardSessionsTable({
   sessions,
   filterMeta,
   totalCount,
+  matchingCount,
+  page,
+  pageSize,
+  onPageChange,
 }: DashboardSessionsTableProps) {
-  const [currentPage, setCurrentPage] = useState(1);
-
-  const totalPages = Math.ceil(sessions.length / ITEMS_PER_PAGE);
-  const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
-  const endIndex = Math.min(startIndex + ITEMS_PER_PAGE, sessions.length);
-  const paginated = sessions.slice(startIndex, endIndex);
+  const totalPages = Math.ceil(matchingCount / pageSize);
+  const startIndex = (page - 1) * pageSize;
+  const endIndex = Math.min(startIndex + sessions.length, matchingCount);
 
   return (
     <div className="space-y-2">
       {/* Summary */}
       <div className="text-sm text-muted-foreground">
-        {sessions.length === 0 ? (
+        {matchingCount === 0 ? (
           "No sessions match the current filters."
         ) : (
           <>
-            Showing {startIndex + 1}-{endIndex} of {sessions.length} sessions
-            {sessions.length !== totalCount && (
+            Showing {startIndex + 1}-{endIndex} of {matchingCount} sessions
+            {matchingCount !== totalCount && (
               <span className="ml-1">(filtered from {totalCount} total)</span>
             )}
           </>
@@ -79,7 +81,7 @@ export default function DashboardSessionsTable({
               </tr>
             </thead>
             <tbody>
-              {paginated.length === 0 ? (
+              {sessions.length === 0 ? (
                 <tr>
                   <td
                     colSpan={4 + filterMeta.length}
@@ -89,7 +91,7 @@ export default function DashboardSessionsTable({
                   </td>
                 </tr>
               ) : (
-                paginated.map((session) => (
+                sessions.map((session) => (
                   <tr
                     key={`${session.projectName}/${session.sessionId}`}
                     className="border-b border-border hover:bg-muted/50 transition-colors"
@@ -131,11 +133,11 @@ export default function DashboardSessionsTable({
           </table>
         </div>
 
-        {sessions.length > 0 && (
+        {matchingCount > 0 && totalPages > 1 && (
           <PaginationControls
-            currentPage={currentPage}
+            currentPage={page}
             totalPages={totalPages}
-            onPageChange={setCurrentPage}
+            onPageChange={onPageChange}
           />
         )}
       </div>

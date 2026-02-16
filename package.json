@@ -1,6 +1,6 @@
 {
   "name": "claudeye",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "description": "Watchtower for Claude Code & Agents SDK — replay sessions, run custom evals, debug agent traces locally",
   "bin": {
     "claudeye": "./bin/claudeye.mjs"
