@@ -57,13 +57,14 @@ export async function hashSubagentFile(
     join(projectsPath, projectName, sessionId, "subagents", fileName),
   ];
 
-  for (const filePath of candidatePaths) {
-    try {
-      const s = await stat(filePath);
+  const results = await Promise.allSettled(
+    candidatePaths.map((filePath) => stat(filePath)),
+  );
+  for (const result of results) {
+    if (result.status === "fulfilled") {
+      const s = result.value;
       const content = `${s.mtimeMs}:${s.size}`;
       return createHash("sha256").update(content).digest("hex");
-    } catch {
-      // Try next candidate
     }
   }
 

@@ -9,6 +9,7 @@ import { ensureEvalsLoaded } from "@/lib/evals/loader";
 import { getCachedSessionLog } from "@/lib/log-entries";
 import { calculateLogStats } from "@/lib/log-stats";
 import { hashSessionFile, hashItemCode, getPerItemCache, setPerItemCache } from "@/lib/cache";
+import { batchAll } from "@/lib/concurrency";
 import type { EvalLogStats } from "@/lib/evals/types";
 
 interface RunnableItem {
@@ -82,14 +83,14 @@ export async function runSessionAction<TItem extends RunnableItem, TResult exten
     const freshSummary = await opts.run(rawLines, stats, uncachedItems);
     const freshResults = opts.extractResults(freshSummary);
 
-    // Store each fresh result in per-item cache (fire-and-forget)
-    for (const result of freshResults) {
+    // Store each fresh result in per-item cache (concurrency-limited)
+    await batchAll(freshResults.map((result) => async () => {
       const item = uncachedItems.find(i => i.name === result.name);
       if (item) {
         const itemCodeHash = hashItemCode(item.fn);
-        setPerItemCache(opts.kind, opts.projectName, opts.sessionId, item.name, itemCodeHash, result, contentHash);
+        await setPerItemCache(opts.kind, opts.projectName, opts.sessionId, item.name, itemCodeHash, result, contentHash);
       }
-    }
+    }), 10);
 
     // Merge cached + fresh results and rebuild summary
     const allResults = [...cachedResults, ...freshResults];

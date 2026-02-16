@@ -1,6 +1,7 @@
 import { readFile, writeFile, unlink, readdir, rm, mkdir } from "fs/promises";
 import { join, dirname } from "path";
 import { homedir } from "os";
+import { batchAll } from "@/lib/concurrency";
 import type { CacheBackend, CacheEntry, CacheMeta } from "./types";
 
 const DEFAULT_CACHE_PATH = join(homedir(), ".claudeye", "cache");
@@ -54,11 +55,11 @@ export class LocalCacheBackend implements CacheBackend {
       const filePrefix = parts.pop() || "";
       const dir = join(this.basePath, ...parts);
       const entries = await readdir(dir);
-      for (const name of entries) {
-        if (name.endsWith(".json") && name.startsWith(filePrefix)) {
-          await unlink(join(dir, name));
-        }
-      }
+      const toDelete = entries.filter((name) => name.endsWith(".json") && name.startsWith(filePrefix));
+      await batchAll(
+        toDelete.map((name) => () => unlink(join(dir, name)).catch(() => {})),
+        50,
+      );
     } catch {
       // Ignore errors during invalidation
     }

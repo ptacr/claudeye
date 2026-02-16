@@ -107,7 +107,7 @@ function EvalResultRow({ result }: { result: EvalRunResult }) {
 
 export default function EvalResultsPanel({ projectName, sessionId, agentId, subagentType, subagentDescription, compact, initialResult }: EvalResultsPanelProps) {
   const [summary, setSummary] = useState<EvalRunSummary | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(initialResult == null);
   const [error, setError] = useState<string | null>(null);
   const [noEvals, setNoEvals] = useState(false);
   const [cached, setCached] = useState(false);

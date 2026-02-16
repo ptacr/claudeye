@@ -6,6 +6,7 @@ import { runAllEvals } from "@/lib/evals/runner";
 import { getCachedSessionLog } from "@/lib/log-entries";
 import { calculateLogStats } from "@/lib/log-stats";
 import { hashSubagentFile, hashItemCode, getPerItemCache, setPerItemCache } from "@/lib/cache";
+import { batchAll } from "@/lib/concurrency";
 import type { EvalRunSummary, EvalRunResult } from "@/lib/evals/types";
 
 export type SubagentEvalActionResult =
@@ -95,15 +96,15 @@ export async function runSubagentEvals(
       },
     );
 
-    // Store each fresh result in per-item cache (fire-and-forget)
+    // Store each fresh result in per-item cache (concurrency-limited)
     if (contentHash) {
-      for (const result of freshSummary.results) {
+      await batchAll(freshSummary.results.map((result) => async () => {
         const item = uncachedItems.find(i => i.name === result.name);
         if (item) {
           const itemCodeHash = hashItemCode(item.fn);
-          setPerItemCache("evals", projectName, sessionKey, item.name, itemCodeHash, result, contentHash);
+          await setPerItemCache("evals", projectName, sessionKey, item.name, itemCodeHash, result, contentHash);
         }
-      }
+      }), 10);
     }
 
     // Merge cached + fresh results and rebuild summary

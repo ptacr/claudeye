@@ -7,6 +7,7 @@ import { getCachedSessionLog } from "@/lib/log-entries";
 import { calculateLogStats } from "@/lib/log-stats";
 import { getCachedProjectFolders, getCachedSessionFiles } from "@/lib/projects";
 import { getCachedResult, setCachedResult, hashSessionFile } from "@/lib/cache";
+import { batchAll } from "@/lib/concurrency";
 import { formatDate } from "@/lib/utils";
 import type {
   DashboardPayload,
@@ -49,25 +50,30 @@ export async function computeDashboard(viewName?: string): Promise<DashboardActi
       allValues[f.name] = [];
     }
 
-    // Collect all (project, sessionFile) pairs
-    const allSessionTasks: { project: typeof projects[number]; file: Awaited<ReturnType<typeof getCachedSessionFiles>>[number] }[] = [];
-    for (const project of projects) {
-      let sessionFiles;
-      try {
-        sessionFiles = await getCachedSessionFiles(project.path);
-      } catch {
-        continue;
-      }
-      for (const file of sessionFiles) {
-        if (file.sessionId) {
-          allSessionTasks.push({ project, file });
+    const CONCURRENCY = 10;
+
+    // Collect all (project, sessionFile) pairs — discover in parallel
+    type SessionTask = { project: typeof projects[number]; file: Awaited<ReturnType<typeof getCachedSessionFiles>>[number] };
+    const allSessionTasks: SessionTask[] = [];
+    const fileResults = await batchAll(
+      projects.map((project) => async () => {
+        const sessionFiles = await getCachedSessionFiles(project.path);
+        return { project, sessionFiles };
+      }),
+      CONCURRENCY,
+    );
+    for (const result of fileResults) {
+      if (result.status === "fulfilled") {
+        for (const file of result.value.sessionFiles) {
+          if (file.sessionId) {
+            allSessionTasks.push({ project: result.value.project, file });
+          }
         }
       }
     }
 
     // Process sessions in batches of 10 to avoid overwhelming the filesystem
     // with concurrent reads. Each session triggers a JSONL file read + parse.
-    const CONCURRENCY = 10;
     for (let i = 0; i < allSessionTasks.length; i += CONCURRENCY) {
       const batch = allSessionTasks.slice(i, i + CONCURRENCY);
       const batchResults = await Promise.allSettled(

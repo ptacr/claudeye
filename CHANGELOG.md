@@ -2,12 +2,21 @@
 
 ## 0.5.4
 
+### Performance
+
+- **Dashboard:** Session file discovery now runs in parallel (`batchAll`) instead of sequentially, speeding up dashboard load for projects with many sessions
+- **Cache:** Per-item cache stores now write in parallel (`batchAll`) instead of sequentially across session actions, subagent evals, and subagent enrichments
+- **Cache:** File deletions during cache invalidation now run in parallel
+- **Cache:** Subagent file stat calls in `hashSubagentFile` now run in parallel
+- **Concurrency:** All parallel I/O operations (project discovery, cache writes, cache invalidation) are now capped via a shared `batchAll` utility to prevent file descriptor exhaustion on large workspaces
+
 ### UI Fixes & Improvements
 
 - **UI:** Fixed text overflow in tool name displays - long tool names (e.g., `mcp__vector_store__search_test_cases`) now truncate with ellipsis instead of overflowing
 - **UI:** Improved tool statistics grid layout to use full horizontal space with auto-fit columns (`repeat(auto-fit, minmax(200px, 1fr))`), providing more room for long tool names when fewer items are displayed
 - **UI:** Added proper flex constraints to prevent icon compression and ensure duration text remains visible
 - **UI:** Tool names in both log viewer and statistics grid now use `truncate` and `min-w-0` CSS classes for proper text overflow handling
+- **UI:** Eval and enrichment results panels now show a loading spinner immediately when no initial result is available, instead of briefly showing an empty state
 
 ## 0.5.3
 

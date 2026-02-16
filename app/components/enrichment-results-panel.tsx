@@ -72,7 +72,7 @@ function EnricherGroup({ result }: { result: EnrichRunResult }) {
 
 export default function EnrichmentResultsPanel({ projectName, sessionId, agentId, subagentType, subagentDescription, compact, initialResult }: EnrichmentResultsPanelProps) {
   const [summary, setSummary] = useState<EnrichRunSummary | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(initialResult == null);
   const [error, setError] = useState<string | null>(null);
   const [noEnrichers, setNoEnrichers] = useState(false);
   const [cached, setCached] = useState(false);
