@@ -75,7 +75,7 @@
     "autoprefixer": "^10.4.24",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "eslint": "^9.39.2",
+    "eslint": "^10.0.2",
     "eslint-config-next": "^16.1.6",
     "jsdom": "^28.1.0",
     "lucide-react": "^0.575.0",
