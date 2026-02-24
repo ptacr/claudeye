@@ -42,4 +42,13 @@ export type {
   ViewOptions,
   RegisteredView,
   DashboardViewInfo,
+  AggregateValue,
+  AggregateContext,
+  AggregateCollectFunction,
+  AggregateReduceFunction,
+  AggregateDefinition,
+  AggregateOptions,
+  CollectedSession,
+  AggregateTableRow,
+  AggregatePayload,
 } from "./dashboard-types";

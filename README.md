@@ -61,12 +61,14 @@ Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session
 
 - **Session stats bar** - turns, tool calls, subagents, duration, and models at a glance
 - **Custom evals** - grade sessions with pass/fail results and 0-1 scores
+- **Per-eval recompute** - re-run a single eval without reprocessing all others
 - **Conditional evals** - gate evals globally or per-item, with session/subagent scope control
 
 ### Utilize
 
 - **Custom enrichments** - compute metadata (token counts, quality signals, labels) as key-value pairs
 - **Dashboard views & filters** - organize filters into named views, each with focused filter tiles (boolean toggles, range sliders, multi-select dropdowns) and a filterable sessions table
+- **Dashboard aggregates** - define cross-session summary tables with `app.dashboard.aggregate()`, using `{ collect, reduce }` for full control over output
 - **JSONL export** - download raw session logs
 - **Auto-refresh** - monitor live sessions at 5s, 10s, or 30s intervals
 - **Light/dark theme** - with system preference detection
@@ -209,6 +211,39 @@ Filter return types (`boolean`, `number`, `string`) auto-determine the UI contro
 [Read more: Dashboard Views API &rarr;](docs/api-reference.md#appdashboardview-name-options)
 [Read more: Dashboard Filters API &rarr;](docs/api-reference.md#appdashboardfilter-name-fn-options)
 
+### Dashboard Aggregates
+
+Aggregates compute cross-session summaries. Provide a `{ collect, reduce }` object: `collect` runs per session returning key-value pairs, and `reduce` transforms all collected values into your output table:
+
+```js
+app.dashboard.view('quality')
+  .aggregate('eval-summary', {
+    collect: ({ evalResults }) => {
+      const result = {};
+      for (const [name, r] of Object.entries(evalResults)) {
+        result[`${name}_pass`] = r.pass;
+      }
+      return result;
+    },
+    reduce: (collected) => {
+      const evalNames = new Set();
+      for (const s of collected) {
+        for (const key of Object.keys(s.values)) {
+          if (key.endsWith('_pass')) evalNames.add(key.replace('_pass', ''));
+        }
+      }
+      return Array.from(evalNames).map(name => ({
+        'Eval': name,
+        'Pass Rate': collected.filter(s => s.values[`${name}_pass`]).length / collected.length,
+      }));
+    },
+  });
+```
+
+The collect function receives an `AggregateContext` with log entries, stats, eval results, enrichment results, and filter values. Computation is incremental — only new/changed sessions are reprocessed.
+
+[Read more: Dashboard Aggregates API &rarr;](docs/api-reference.md#appdashboardaggregate-name-definition-options)
+
 ### Conditions
 
 Conditions gate when evals and enrichments run. Set a **global condition** with `app.condition()` to skip everything for certain sessions, or add a **per-item condition** in the options:
@@ -318,7 +353,7 @@ When auth is active, all UI routes redirect to `/login`. After signing in, a sig
 
 ## How It Works
 
-1. `createApp()` + `app.eval()` / `app.enrich()` / `app.condition()` / `app.dashboard.view()` / `app.dashboard.filter()` register functions in global registries
+1. `createApp()` + `app.eval()` / `app.enrich()` / `app.condition()` / `app.dashboard.view()` / `app.dashboard.filter()` / `app.dashboard.aggregate()` register functions in global registries
 2. When you run `claudeye --evals ./my-file.js`, the server dynamically imports your file, populating the registries
 3. When the dashboard loads a session, server actions run all registered evals and enrichers against the combined raw JSONL lines (session + all subagent logs)
 4. The global condition is checked first. If it fails, everything is skipped
@@ -326,6 +361,7 @@ When auth is active, all UI routes redirect to `/login`. After signing in, a sig
 6. Each function is individually error-isolated. If one throws, the others still run
 7. Results are serialized and displayed in separate panels in the dashboard UI
 8. Named dashboard views (`/dashboard`) show a view index; each view (`/dashboard/[viewName]`) computes filter values incrementally (only new/changed sessions are processed), then filters and paginates server-side for efficiency
+9. Dashboard aggregates run a separate server action that collects per-session values (with eval/enrichment/filter results) and reduces them via user-defined reduce functions into sortable summary tables
 
 ## Contributing
 

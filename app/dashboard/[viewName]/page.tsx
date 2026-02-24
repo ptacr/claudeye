@@ -3,6 +3,7 @@ import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import { listDashboardViews } from "@/app/actions/list-dashboard-views";
 import DashboardClient from "../dashboard-client";
+import AggregateClient from "../aggregate-client";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,11 @@ export default async function ViewPage({ params }: { params: Promise<{ viewName:
           </p>
         </div>
         <DashboardClient viewName={decodedViewName} />
+        {viewInfo && viewInfo.aggregateCount > 0 && (
+          <div className="mt-8">
+            <AggregateClient viewName={decodedViewName} />
+          </div>
+        )}
       </div>
     </main>
   );

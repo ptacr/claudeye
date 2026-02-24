@@ -32,3 +32,38 @@ app.eval('under-50-turns', ({ stats }) => {
     message: `${stats.turnCount} turn(s)`,
   };
 });
+
+// --- Dashboard view with aggregates ---
+
+app.dashboard.view('overview', { label: 'Session Overview' })
+  .aggregate('session-metrics', {
+    collect: ({ stats, evalResults }) => ({
+      turnCount: stats.turnCount,
+      toolCalls: stats.toolCallCount,
+      hasCompletion: evalResults['has-completion']?.pass ?? false,
+      primaryModel: stats.models[0] || 'unknown',
+    }),
+    reduce: (collected) => {
+      const models = new Map();
+      let totalTurns = 0;
+      let totalTools = 0;
+      let completions = 0;
+      for (const s of collected) {
+        totalTurns += typeof s.values.turnCount === 'number' ? s.values.turnCount : 0;
+        totalTools += typeof s.values.toolCalls === 'number' ? s.values.toolCalls : 0;
+        if (s.values.hasCompletion === true) completions++;
+        const model = s.values.primaryModel;
+        if (typeof model === 'string') models.set(model, (models.get(model) || 0) + 1);
+      }
+      const n = collected.length || 1;
+      return [
+        { Metric: 'Avg Turns', Value: +(totalTurns / n).toFixed(1) },
+        { Metric: 'Avg Tool Calls', Value: +(totalTools / n).toFixed(1) },
+        { Metric: 'Completion Rate', Value: +((completions / n) * 100).toFixed(1) },
+        ...Array.from(models.entries()).map(([model, count]) => ({
+          Metric: `Model: ${model}`, Value: count,
+        })),
+      ];
+    },
+  }, { label: 'Session Metrics' })
+  .filter('turns', ({ stats }) => stats.turnCount, { label: 'Turns' });

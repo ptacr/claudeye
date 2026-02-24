@@ -26,6 +26,7 @@ export async function runSessionAction<TItem extends RunnableItem, TResult exten
   projectName: string;
   sessionId: string;
   forceRefresh: boolean;
+  evalName?: string;
   getItems: () => TItem[];
   run: (rawLines: Record<string, unknown>[], stats: EvalLogStats, items: TItem[]) => Promise<TSummary>;
   buildSummary: (results: TResult[], totalDurationMs: number) => TSummary;
@@ -38,9 +39,18 @@ export async function runSessionAction<TItem extends RunnableItem, TResult exten
   try {
     await ensureEvalsLoaded();
 
-    const items = opts.getItems();
+    let items = opts.getItems();
     if (items.length === 0) {
       return { ok: true, hasItems: false };
+    }
+
+    // Filter to a single eval when evalName is provided
+    if (opts.evalName) {
+      const filtered = items.filter(i => i.name === opts.evalName);
+      if (filtered.length === 0) {
+        return { ok: false, error: `Eval "${opts.evalName}" not found` };
+      }
+      items = filtered;
     }
 
     // Compute content hash once for the session
@@ -50,7 +60,7 @@ export async function runSessionAction<TItem extends RunnableItem, TResult exten
     const cachedResults: TResult[] = [];
     const uncachedItems: TItem[] = [];
 
-    if (!opts.forceRefresh) {
+    if (!opts.forceRefresh && !opts.evalName) {
       await Promise.all(items.map(async (item) => {
         const itemCodeHash = hashItemCode(item.fn);
         const cached = await getPerItemCache<TResult>(

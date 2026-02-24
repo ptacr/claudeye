@@ -105,6 +105,12 @@ export default function DashboardClient({ viewName }: { viewName: string }) {
   const [currentPage, setCurrentPage] = useState(1);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  useEffect(() => {
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, []);
+
   const fetchDashboard = useCallback(async (
     filters?: SerializedFilters,
     page?: number,

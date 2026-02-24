@@ -47,7 +47,7 @@ interface DashboardIndex {
   cachedFilterMeta: FilterMeta[] | null;
 }
 
-const INDEX_KEY = "__VIZAUDE_DASHBOARD_INDEX__";
+const INDEX_KEY = "__CLAUDEYE_DASHBOARD_INDEX__";
 
 interface GlobalWithIndex {
   [INDEX_KEY]?: DashboardIndex;
@@ -279,7 +279,7 @@ export async function computeDashboard(
         try {
           contentHash = await hashSessionFile(project.name, sid);
         } catch {
-          contentHash = "";
+          contentHash = crypto.randomUUID();
         }
         return { key, contentHash, project, file };
       }),

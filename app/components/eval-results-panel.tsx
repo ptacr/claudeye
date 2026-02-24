@@ -61,10 +61,29 @@ function StatusIcon({ result }: { result: EvalRunResult }) {
   return <XCircle className="w-4 h-4 text-red-500" />;
 }
 
-function EvalResultRow({ result }: { result: EvalRunResult }) {
+function EvalResultRow({
+  result,
+  onRerun,
+  globalLoading,
+}: {
+  result: EvalRunResult;
+  onRerun: (name: string) => Promise<void>;
+  globalLoading: boolean;
+}) {
   const [expanded, setExpanded] = useState(false);
+  const [rerunning, setRerunning] = useState(false);
   const expandableText = result.error || result.message;
   const hasExpandableContent = !!expandableText;
+
+  const handleRerun = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setRerunning(true);
+    try {
+      await onRerun(result.name);
+    } finally {
+      setRerunning(false);
+    }
+  };
 
   return (
     <div>
@@ -90,6 +109,15 @@ function EvalResultRow({ result }: { result: EvalRunResult }) {
             {result.message}
           </span>
         )}
+        <button
+          onClick={handleRerun}
+          disabled={rerunning || globalLoading}
+          className="ml-auto flex-shrink-0 p-1 rounded hover:bg-muted/50 transition-colors disabled:opacity-50"
+          title="Re-run this eval"
+          aria-label={`Re-run eval ${result.name}`}
+        >
+          <RefreshCw className={`w-3.5 h-3.5 text-muted-foreground ${rerunning ? "animate-spin" : ""}`} />
+        </button>
       </div>
       {expanded && expandableText && (
         <div className="ml-10 mr-3 mb-2 relative group">
@@ -113,10 +141,12 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
   const [cached, setCached] = useState(false);
   const [collapsed, setCollapsed] = useState(true);
   const abortRef = useRef<AbortController | null>(null);
+  const singleEvalAbortRef = useRef<AbortController | null>(null);
 
   const run = useCallback(async (forceRefresh = false) => {
-    // Abort any in-flight request
+    // Abort any in-flight request (global or single-eval)
     abortRef.current?.abort();
+    singleEvalAbortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
 
@@ -145,6 +175,58 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
     }
   }, [projectName, sessionId, agentId, subagentType, subagentDescription]);
 
+  const runSingleEval = useCallback(async (evalName: string) => {
+    // Abort any previous in-flight single-eval request
+    singleEvalAbortRef.current?.abort();
+    const controller = new AbortController();
+    singleEvalAbortRef.current = controller;
+
+    try {
+      const result = agentId
+        ? await runSubagentEvals(projectName, sessionId, agentId, subagentType, subagentDescription, false, evalName)
+        : await runEvals(projectName, sessionId, false, evalName);
+      if (controller.signal.aborted) return;
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      if (!result.hasEvals) return;
+
+      // Merge the single fresh result into existing summary
+      const freshResult = result.summary.results[0];
+      if (!freshResult) return;
+
+      if (controller.signal.aborted) return;
+      setSummary((prev) => {
+        if (!prev) return prev;
+        const updatedResults = prev.results.map((r) =>
+          r.name === freshResult.name ? freshResult : r,
+        );
+        let passCount = 0, failCount = 0, errorCount = 0, skippedCount = 0, totalDurationMs = 0;
+        for (const r of updatedResults) {
+          totalDurationMs += r.durationMs || 0;
+          if (r.skipped) skippedCount++;
+          else if (r.error) errorCount++;
+          else if (r.pass) passCount++;
+          else failCount++;
+        }
+        return {
+          ...prev,
+          results: updatedResults,
+          passCount,
+          failCount,
+          errorCount,
+          skippedCount,
+          totalDurationMs,
+        };
+      });
+      setCached(false);
+    } catch (e) {
+      if (controller.signal.aborted) return;
+      setError(e instanceof Error ? e.message : "Failed to rerun eval");
+    }
+  }, [projectName, sessionId, agentId, subagentType, subagentDescription]);
+
   // Apply pre-fetched result from dashboard batch call
   useEffect(() => {
     if (initialResult === undefined) return; // no dashboard — will fetch independently
@@ -170,6 +252,7 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
     run(false);
     return () => {
       abortRef.current?.abort();
+      singleEvalAbortRef.current?.abort();
     };
   }, [run, initialResult]);
 
@@ -272,7 +355,7 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
       {!collapsed && (
         <div className="divide-y divide-border/50">
           {visibleResults.map((result) => (
-            <EvalResultRow key={result.name} result={result} />
+            <EvalResultRow key={result.name} result={result} onRerun={runSingleEval} globalLoading={loading} />
           ))}
         </div>
       )}

@@ -2,6 +2,7 @@
 import Link from "next/link";
 import { listDashboardViews } from "@/app/actions/list-dashboard-views";
 import DashboardClient from "./dashboard-client";
+import AggregateClient from "./aggregate-client";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,7 @@ export default async function DashboardPage() {
     );
   }
 
-  const { views, hasDefaultFilters } = result;
+  const { views, hasDefaultFilters, hasDefaultAggregates } = result;
 
   // Named views exist → show view index
   if (views.length > 0) {
@@ -50,6 +51,11 @@ export default async function DashboardPage() {
                 </h3>
                 <p className="text-sm text-muted-foreground mt-1">
                   {view.filterCount} {view.filterCount === 1 ? "filter" : "filters"}
+                  {view.aggregateCount > 0 && (
+                    <span>
+                      {" "}&middot; {view.aggregateCount} {view.aggregateCount === 1 ? "aggregate" : "aggregates"}
+                    </span>
+                  )}
                 </p>
               </Link>
             ))}
@@ -58,6 +64,11 @@ export default async function DashboardPage() {
             <div className="mt-8">
               <h3 className="text-lg font-medium text-foreground mb-4">Default Filters</h3>
               <DashboardClient viewName="default" />
+            </div>
+          )}
+          {hasDefaultAggregates && (
+            <div className="mt-8">
+              <AggregateClient viewName="default" />
             </div>
           )}
         </div>
@@ -77,6 +88,11 @@ export default async function DashboardPage() {
             </p>
           </div>
           <DashboardClient viewName="default" />
+          {hasDefaultAggregates && (
+            <div className="mt-8">
+              <AggregateClient viewName="default" />
+            </div>
+          )}
         </div>
       </main>
     );

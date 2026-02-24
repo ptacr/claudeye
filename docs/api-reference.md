@@ -382,6 +382,165 @@ app.condition(({ entries }) => entries.length > 0);
 
 ---
 
+## `app.dashboard.aggregate(name, definition, options?)`
+
+Register a cross-session aggregate on the **default** view. For organizing aggregates into named views, use `app.dashboard.view().aggregate()`.
+
+- **`name`** - unique string identifier for the aggregate
+- **`definition`** - a `{ collect, reduce }` object
+- **`options.label`** - human-readable label for the aggregate section (defaults to the name)
+- **`options.condition`** - optional condition function to gate this aggregate per session
+
+### Example
+
+Provide a `{ collect, reduce }` object. The `collect` function runs per session, and `reduce` transforms all collected values into your output table:
+
+```js
+app.dashboard.aggregate('eval-summary', {
+  collect: ({ evalResults }) => {
+    const result = {};
+    for (const [name, r] of Object.entries(evalResults)) {
+      result[`${name}_pass`] = r.pass;
+      result[`${name}_score`] = r.score;
+    }
+    return result;
+  },
+  reduce: (collected) => {
+    const evalNames = new Set();
+    for (const s of collected) {
+      for (const key of Object.keys(s.values)) {
+        if (key.endsWith('_pass')) evalNames.add(key.replace('_pass', ''));
+      }
+    }
+    return Array.from(evalNames).map(name => ({
+      'Eval': name,
+      'Pass Rate': collected.filter(s => s.values[`${name}_pass`]).length / collected.length,
+      'Avg Score': collected.reduce((sum, s) => {
+        const v = s.values[`${name}_score`];
+        return sum + (typeof v === 'number' ? v : 0);
+      }, 0) / collected.length,
+    }));
+  },
+});
+```
+
+### `app.dashboard.view().aggregate()`
+
+Aggregates can be chained on named views alongside filters:
+
+```js
+app.dashboard.view('quality', { label: 'Quality' })
+  .aggregate('session-metrics', {
+    collect: ({ stats }) => ({
+      turnCount: stats.turnCount,
+      toolCalls: stats.toolCallCount,
+    }),
+    reduce: (collected) => {
+      const n = collected.length || 1;
+      let turns = 0, tools = 0;
+      for (const s of collected) {
+        turns += typeof s.values.turnCount === 'number' ? s.values.turnCount : 0;
+        tools += typeof s.values.toolCalls === 'number' ? s.values.toolCalls : 0;
+      }
+      return [
+        { Metric: 'Avg Turns', Value: +(turns / n).toFixed(1) },
+        { Metric: 'Avg Tool Calls', Value: +(tools / n).toFixed(1) },
+      ];
+    },
+  })
+  .filter('turns', ({ stats }) => stats.turnCount, { label: 'Turns' });
+```
+
+### `AggregateContext`
+
+The collect function receives an extended context:
+
+```ts
+interface AggregateContext {
+  entries: Record<string, unknown>[];  // Raw JSONL lines
+  stats: EvalLogStats;                 // Computed stats
+  projectName: string;
+  sessionId: string;
+  source: string;
+  evalResults: Record<string, { pass: boolean; score: number; error?: string; message?: string }>;
+  enrichResults: Record<string, Record<string, EnrichmentValue>>;
+  filterValues: Record<string, FilterValue>;
+}
+```
+
+### `AggregateValue`
+
+```ts
+type AggregateValue = boolean | number | string;
+```
+
+### `AggregateCollectFunction`
+
+```ts
+type AggregateCollectFunction = (
+  context: AggregateContext,
+) => Record<string, AggregateValue> | Promise<Record<string, AggregateValue>>;
+```
+
+### `AggregateReduceFunction`
+
+```ts
+type AggregateReduceFunction = (
+  collected: CollectedSession[],
+) => AggregateTableRow[] | Promise<AggregateTableRow[]>;
+```
+
+### `AggregateDefinition`
+
+```ts
+type AggregateDefinition = {
+  collect: AggregateCollectFunction;
+  reduce: AggregateReduceFunction;
+};
+```
+
+### `AggregateOptions`
+
+```ts
+interface AggregateOptions {
+  label?: string;
+  condition?: ConditionFunction;
+}
+```
+
+### `CollectedSession`
+
+```ts
+interface CollectedSession {
+  projectName: string;
+  sessionId: string;
+  values: Record<string, AggregateValue>;
+}
+```
+
+### `AggregateTableRow`
+
+```ts
+type AggregateTableRow = Record<string, AggregateValue>;
+```
+
+### `AggregatePayload`
+
+```ts
+interface AggregatePayload {
+  aggregates: {
+    name: string;
+    label: string;
+    rows: AggregateTableRow[];
+    columns: string[];
+  }[];
+  totalSessions: number;
+  totalDurationMs: number;
+}
+```
+
+---
+
 ## `app.auth(options)`
 
 Configure username/password authentication. When at least one user is configured (via `app.auth()`, `--auth-user`, or `CLAUDEYE_AUTH_USERS` env var), all UI routes are protected by a login page. Users from all sources are merged.
@@ -816,8 +975,27 @@ app.enrich('subagent-info',
 
 // --- Dashboard views (visible at /dashboard) ---
 
-// Performance view: turn & tool metrics
+// Performance view: turn & tool metrics with aggregates
 app.dashboard.view('performance', { label: 'Performance Metrics' })
+  .aggregate('session-metrics', {
+    collect: ({ stats }) => ({
+      turnCount: stats.turnCount,
+      toolCalls: stats.toolCallCount,
+    }),
+    reduce: (collected) => {
+      const n = collected.length || 1;
+      let turns = 0, tools = 0;
+      for (const s of collected) {
+        turns += typeof s.values.turnCount === 'number' ? s.values.turnCount : 0;
+        tools += typeof s.values.toolCalls === 'number' ? s.values.toolCalls : 0;
+      }
+      return [
+        { Metric: 'Avg Turns', Value: +(turns / n).toFixed(1) },
+        { Metric: 'Avg Tool Calls', Value: +(tools / n).toFixed(1) },
+        { Metric: 'Total Sessions', Value: collected.length },
+      ];
+    },
+  }, { label: 'Session Metrics' })
   .filter('turn-count', ({ stats }) => stats.turnCount, { label: 'Turn Count' })
   .filter('tool-calls', ({ stats }) => stats.toolCallCount, { label: 'Tool Calls' });
 
@@ -882,11 +1060,13 @@ app.enrich('agent-summary', ({ entries, source, stats }) => ({
 - Eval, enricher, filter, and condition functions can all be async.
 - Re-registering with the same name replaces the previous function.
 - Click "Re-run" in either panel to re-execute against the current session (always bypasses cache).
-- You can mix `app.eval()`, `app.enrich()`, `app.condition()`, `app.dashboard.filter()`, and `app.dashboard.view()` calls freely in the same file.
+- You can mix `app.eval()`, `app.enrich()`, `app.condition()`, `app.dashboard.filter()`, `app.dashboard.view()`, and `app.dashboard.aggregate()` calls freely in the same file.
 - Per-item condition errors are treated as eval/enrichment errors (not skips), so you'll see the error message in the UI.
 - Dashboard filter return types are auto-detected from the first non-null value: `boolean` &rarr; toggle, `number` &rarr; range slider, `string` &rarr; multi-select.
 - Filter values are computed incrementally server-side (only new/changed sessions). Filtering and pagination also happen server-side, with debounced re-fetches on filter changes.
 - Use `app.dashboard.view()` to organize filters into focused groups. Each view gets its own `/dashboard/[viewName]` route.
 - The same filter name can be used in different views without conflict.
 - `app.dashboard.filter()` registers to the "default" view for backward compatibility.
+- `app.dashboard.aggregate()` works with both default and named views. Always provide `{ collect, reduce }` for full control over the output table.
+- Aggregate collect functions receive `AggregateContext` with eval/enrichment/filter results. Computation is incremental and uses a separate execution path from filters.
 - `entries` contains combined session + subagent data. Each entry has `_source` (`"session"` or `"agent-{id}"`). Use `source` from the context to filter: `entries.filter(e => e._source === source)`.

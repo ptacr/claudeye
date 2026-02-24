@@ -18,12 +18,14 @@ export async function runEvals(
   projectName: string,
   sessionId: string,
   forceRefresh: boolean = false,
+  evalName?: string,
 ): Promise<EvalActionResult> {
   const result = await runSessionAction<any, EvalRunResult, EvalRunSummary>({
     kind: "evals",
     projectName,
     sessionId,
-    forceRefresh,
+    forceRefresh: evalName ? true : forceRefresh,
+    evalName,
     getItems: getSessionScopedEvals,
     run: (rawLines, stats, items) =>
       runAllEvals(rawLines, stats, projectName, sessionId, items as any, { source: 'session' }),

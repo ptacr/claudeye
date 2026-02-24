@@ -9,7 +9,8 @@
  *
  * Reuses EvalContext from types.ts — no duplication.
  */
-import type { EvalContext, ConditionFunction } from "./types";
+import type { EvalContext, EvalLogStats, ConditionFunction } from "./types";
+import type { EnrichmentValue } from "./enrich-types";
 
 /** Allowed return types for filter functions. */
 export type FilterValue = boolean | number | string;
@@ -52,6 +53,7 @@ export interface DashboardViewInfo {
   name: string;
   label: string;
   filterCount: number;
+  aggregateCount: number;
 }
 
 /** Result of computing a single filter for one session. */
@@ -125,3 +127,76 @@ export type SerializedFilterState =
   | { type: "string"; selected: string[] };
 
 export type SerializedFilters = Record<string, SerializedFilterState>;
+
+// ── Aggregate types ──
+
+/** Values that can be returned from a collect function. */
+export type AggregateValue = boolean | number | string;
+
+/** Context passed to aggregate collect functions (extends EvalContext). */
+export interface AggregateContext {
+  // From EvalContext
+  entries: Record<string, unknown>[];
+  stats: EvalLogStats;
+  projectName: string;
+  sessionId: string;
+  source: string;
+  // Additional data
+  evalResults: Record<string, { pass: boolean; score: number; error?: string; message?: string }>;
+  enrichResults: Record<string, Record<string, EnrichmentValue>>;
+  filterValues: Record<string, FilterValue>;
+}
+
+/** Per-session collect function — returns key-value pairs to aggregate. */
+export type AggregateCollectFunction = (
+  context: AggregateContext,
+) => Record<string, AggregateValue> | Promise<Record<string, AggregateValue>>;
+
+/** A collected session row (output of collect phase). */
+export interface CollectedSession {
+  projectName: string;
+  sessionId: string;
+  values: Record<string, AggregateValue>;
+}
+
+/** A row in the final aggregate table (output of reduce phase). */
+export type AggregateTableRow = Record<string, AggregateValue>;
+
+/** Full reduce function — receives all collected sessions, returns table rows. */
+export type AggregateReduceFunction = (
+  collected: CollectedSession[],
+) => AggregateTableRow[] | Promise<AggregateTableRow[]>;
+
+/** Options when registering an aggregate. */
+export interface AggregateOptions {
+  label?: string;
+  condition?: ConditionFunction;
+}
+
+/** Aggregate registration — requires both collect and reduce. */
+export type AggregateDefinition = {
+  collect: AggregateCollectFunction;
+  reduce: AggregateReduceFunction;
+};
+
+/** A registered aggregate stored in the registry. */
+export interface RegisteredAggregate {
+  name: string;
+  collect: AggregateCollectFunction;
+  reduce: AggregateReduceFunction;
+  label: string;
+  condition?: ConditionFunction;
+  view: string;
+}
+
+/** Full payload for aggregates. */
+export interface AggregatePayload {
+  aggregates: {
+    name: string;
+    label: string;
+    rows: AggregateTableRow[];
+    columns: string[];
+  }[];
+  totalSessions: number;
+  totalDurationMs: number;
+}

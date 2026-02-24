@@ -35,13 +35,23 @@ export async function runSubagentEvals(
   subagentType?: string,
   subagentDescription?: string,
   forceRefresh: boolean = false,
+  evalName?: string,
 ): Promise<SubagentEvalActionResult> {
   try {
     await ensureEvalsLoaded();
 
-    const subagentEvals = getSubagentScopedEvals(subagentType);
+    let subagentEvals = getSubagentScopedEvals(subagentType);
     if (subagentEvals.length === 0) {
       return { ok: true, hasEvals: false };
+    }
+
+    // Filter to a single eval when evalName is provided
+    if (evalName) {
+      const filtered = subagentEvals.filter(e => e.name === evalName);
+      if (filtered.length === 0) {
+        return { ok: false, error: `Eval "${evalName}" not found` };
+      }
+      subagentEvals = filtered;
     }
 
     const sessionKey = `${sessionId}/agent-${agentId}`;
@@ -51,7 +61,7 @@ export async function runSubagentEvals(
     const cachedResults: EvalRunResult[] = [];
     const uncachedItems: typeof subagentEvals = [];
 
-    if (!forceRefresh && contentHash) {
+    if (!forceRefresh && !evalName && contentHash) {
       await Promise.all(subagentEvals.map(async (item) => {
         const itemCodeHash = hashItemCode(item.fn);
         const cached = await getPerItemCache<EvalRunResult>(

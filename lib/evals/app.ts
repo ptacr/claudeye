@@ -9,13 +9,13 @@
  */
 import { registerEval } from "./registry";
 import { registerEnricher } from "./enrich-registry";
-import { registerFilter, registerView } from "./dashboard-registry";
+import { registerFilter, registerView, registerAggregate } from "./dashboard-registry";
 import { setGlobalCondition } from "./condition-registry";
 import { registerAuthUsers } from "./auth-registry";
 import type { AuthUser } from "./auth-registry";
 import type { ConditionFunction, EvalFunction, EvalScope } from "./types";
 import type { EnrichFunction } from "./enrich-types";
-import type { FilterFunction, FilterOptions, ViewOptions } from "./dashboard-types";
+import type { FilterFunction, FilterOptions, ViewOptions, AggregateDefinition, AggregateOptions } from "./dashboard-types";
 
 const LOADING_KEY = "__CLAUDEYE_LOADING_EVALS__";
 
@@ -47,11 +47,15 @@ export interface EnrichOptions {
 export interface DashboardViewBuilder {
   /** Register a filter on this view. Returns the view builder for chaining. */
   filter(name: string, fn: FilterFunction, options?: FilterOptions): DashboardViewBuilder;
+  /** Register an aggregate on this view. Returns the view builder for chaining. */
+  aggregate(name: string, definition: AggregateDefinition, options?: AggregateOptions): DashboardViewBuilder;
 }
 
 export interface DashboardBuilder {
   /** Register a dashboard filter on the default view. Returns the app for chaining. */
   filter(name: string, fn: FilterFunction, options?: FilterOptions): ClaudeyeApp;
+  /** Register an aggregate on the default view. Returns the app for chaining. */
+  aggregate(name: string, definition: AggregateDefinition, options?: AggregateOptions): ClaudeyeApp;
   /** Create or get a named dashboard view. Returns a view builder. */
   view(name: string, options?: ViewOptions): DashboardViewBuilder;
 }
@@ -98,11 +102,19 @@ export function createApp(): ClaudeyeApp {
         registerFilter(name, fn, options?.label, options?.condition, "default");
         return app;
       },
+      aggregate(name: string, definition: AggregateDefinition, options?: AggregateOptions): ClaudeyeApp {
+        registerAggregate(name, definition, options?.label, options?.condition, "default");
+        return app;
+      },
       view(name: string, options?: ViewOptions): DashboardViewBuilder {
         registerView(name, options?.label ?? name);
         const viewBuilder: DashboardViewBuilder = {
           filter(filterName: string, fn: FilterFunction, filterOptions?: FilterOptions): DashboardViewBuilder {
             registerFilter(filterName, fn, filterOptions?.label, filterOptions?.condition, name);
+            return viewBuilder;
+          },
+          aggregate(aggName: string, definition: AggregateDefinition, aggOptions?: AggregateOptions): DashboardViewBuilder {
+            registerAggregate(aggName, definition, aggOptions?.label, aggOptions?.condition, name);
             return viewBuilder;
           },
         };

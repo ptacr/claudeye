@@ -9,14 +9,16 @@
  * and remains a true singleton across dynamic imports.
  */
 import type { ConditionFunction } from "./types";
-import type { FilterFunction, RegisteredFilter, RegisteredView } from "./dashboard-types";
+import type { FilterFunction, RegisteredFilter, RegisteredView, AggregateDefinition, RegisteredAggregate } from "./dashboard-types";
 
 const REGISTRY_KEY = "__CLAUDEYE_DASHBOARD_FILTER_REGISTRY__";
 const VIEW_REGISTRY_KEY = "__CLAUDEYE_DASHBOARD_VIEW_REGISTRY__";
+const AGGREGATE_REGISTRY_KEY = "__CLAUDEYE_DASHBOARD_AGGREGATE_REGISTRY__";
 
 interface GlobalWithRegistry {
   [REGISTRY_KEY]?: RegisteredFilter[];
   [VIEW_REGISTRY_KEY]?: RegisteredView[];
+  [AGGREGATE_REGISTRY_KEY]?: RegisteredAggregate[];
 }
 
 function getRegistry(): RegisteredFilter[] {
@@ -93,4 +95,55 @@ export function hasViews(): boolean {
 export function clearViews(): void {
   const g = globalThis as GlobalWithRegistry;
   g[VIEW_REGISTRY_KEY] = [];
+}
+
+// ── Aggregate registry ──
+
+function getAggregateRegistry(): RegisteredAggregate[] {
+  const g = globalThis as GlobalWithRegistry;
+  if (!g[AGGREGATE_REGISTRY_KEY]) {
+    g[AGGREGATE_REGISTRY_KEY] = [];
+  }
+  return g[AGGREGATE_REGISTRY_KEY];
+}
+
+export function registerAggregate(
+  name: string,
+  definition: AggregateDefinition,
+  label?: string,
+  condition?: ConditionFunction,
+  view?: string,
+): void {
+  const registry = getAggregateRegistry();
+  const viewName = view ?? "default";
+
+  const entry: RegisteredAggregate = {
+    name,
+    collect: definition.collect,
+    reduce: definition.reduce,
+    label: label ?? name,
+    view: viewName,
+  };
+  if (condition) entry.condition = condition;
+
+  // Replace if same (view, name) exists
+  const idx = registry.findIndex((e) => e.view === viewName && e.name === name);
+  if (idx >= 0) {
+    registry[idx] = entry;
+  } else {
+    registry.push(entry);
+  }
+}
+
+export function getAggregatesForView(viewName: string): RegisteredAggregate[] {
+  return getAggregateRegistry().filter((a) => a.view === viewName);
+}
+
+export function hasAggregates(): boolean {
+  return getAggregateRegistry().length > 0;
+}
+
+export function clearAggregates(): void {
+  const g = globalThis as GlobalWithRegistry;
+  g[AGGREGATE_REGISTRY_KEY] = [];
 }

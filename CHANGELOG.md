@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.6
+
+### Per-Eval Recompute
+
+- **New: per-eval re-run button** — each eval result row now has an individual refresh icon. Click it to recompute just that eval without re-running all others.
+- **Single-eval server actions:** `runEvals()` and `runSubagentEvals()` accept an optional `evalName` parameter to run a single eval in isolation, always bypassing cache.
+- **Merge-on-return:** The fresh single-eval result is merged into the existing summary in-place — pass/fail/error/skipped counts are recalculated without a full reload.
+- **Generic support via `runSessionAction`:** The shared `runSessionAction` helper now accepts `evalName`, filtering items to the requested eval and skipping cache lookup when set.
+
+### Dashboard Aggregates
+
+- **New: `app.dashboard.aggregate()` API** — define cross-session aggregations on dashboard views. Provide a `{ collect, reduce }` object: `collect` runs per session (with access to entries, stats, eval results, enrichment results, and filter values), and `reduce` transforms collected values into a sortable summary table with full control over columns and rows.
+- **Incremental computation:** Uses the same incremental index pattern as dashboard filters — only new/changed sessions are reprocessed. Collected values are cached per-session.
+- **Rich context:** The collect function receives `AggregateContext` with log entries, stats, eval results, enrichment results, and filter values — everything computed for the session.
+- **Sortable tables:** Custom tables support column sorting in the dashboard UI.
+- **Chainable API:** `.aggregate()` chains with `.filter()` on views: `app.dashboard.view('quality').aggregate(...).filter(...)`.
+- **Zero impact on filters:** Aggregates use a completely separate server action, globalThis index, and execution path — existing filter performance is unaffected.
+- **Memory-safe:** Parsed session data is garbage-collected immediately after collect runs. Only small collected key-value pairs are retained in the index.
+
 ## 0.5.5
 
 ### Performance — High-Performance Dashboard Filters
