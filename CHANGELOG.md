@@ -1,5 +1,51 @@
 # Changelog
 
+## 0.6.0
+
+### Unified Queue System
+
+- **Single unified queue:** Replaced the dual queue system (session queue + per-item queue) with a single priority queue. Every individual eval and enrichment — session-scoped, subagent-scoped, UI-triggered, or background-scanned — now passes through one queue with bounded concurrency.
+- **Per-item granularity:** The background scanner now enqueues individual uncached evals/enrichments at LOW priority instead of whole sessions. UI requests enqueue at HIGH priority and jump ahead.
+- **Subagent queue integration:** Subagent evals and enrichments now route through the unified queue (via `/api/queue-item`) instead of calling server actions directly. New `process-subagent-eval.ts` and `process-subagent-enrichment.ts` single-item workers handle subagent processing.
+- **Completed items tracking:** The queue now tracks recently completed items (ring buffer, TTL-pruned) with duration, success/fail status, and error messages. Configurable via `CLAUDEYE_QUEUE_HISTORY_TTL` env var (default: 3600s).
+- **Alert integration:** Alerts now fire per-item — after each successful completion, the queue checks if all evals+enrichments for that session are cached and fires alerts when the set is complete.
+- **Queue details page:** `/queue` now has three tabs: In Queue, Processing, and Processed. Each shows type badges (EVAL/ENRICHMENT), item names, session links, priority, and timing info.
+- **Simplified dropdown:** The navbar queue dropdown shows max 7 processing items with type badges, pending count, and "View details" link. No more `processedCount` display.
+- **Dead code removal:** Removed `queue-session.ts`, `run-evals.ts`, `run-enrichments.ts`, `run-session-action.ts`, `run-subagent-evals.ts`, and `run-subagent-enrichments.ts` — all replaced by the unified queue path.
+
+### Bun Migration
+
+- **Runtime:** Switched from Node.js/npm to Bun as the primary runtime and package manager. All scripts now use `bun`/`bunx` instead of `npm`/`npx`.
+- **Performance:** Bun's faster event loop benefits the I/O-heavy codebase (session log parsing, background queue, cache validation, eval/enrichment runners).
+- **CI:** Updated GitHub Actions workflow to use `oven-sh/setup-bun@v2`.
+- **Removed `tsx`:** Bun runs TypeScript natively, eliminating the `tsx` dev dependency.
+- **PM2 deployment:** Added PM2 ecosystem config documentation for production deployments with Bun as interpreter.
+
+### Bug Fixes & Robustness
+
+- **Unhandled promise rejections:** Added `.catch()` handlers to all promise chains in `EvalResultsPanel` and `EnrichmentResultsPanel` mount effects. Previously, network errors or server failures during the two-phase loading could cause unhandled rejections and leave the UI in a stuck loading state.
+- **Stuck loading on unhappy paths:** `runAll` in both panels now transitions loading items to error state when the server returns `!ok` or `!hasEvals`/`!hasEnrichers`, instead of leaving them as indefinite spinners.
+- **`rerunSingleEval` unhappy paths:** Added error fallbacks for all non-exception failure paths (non-ok responses, empty results, missing items). Previously, items would remain stuck in loading state if the re-run returned a non-exception failure.
+- **Cached badge preserved on refresh:** Phase 2 cache re-probe now only overwrites items that are still in `loading` state, preventing already-resolved cached items from losing their "cached" badge.
+- **Background processor re-entrancy:** Replaced `setInterval` with a self-scheduling `setTimeout` loop in the background queue processor. Previously, if `scanAndEnqueue` + `processBatch` took longer than the interval, overlapping callbacks could cause concurrent queue mutation.
+
+### Alert API
+
+- **New: `app.alert()` API** — register callbacks that fire after all evals and enrichments complete for a session. Alerts receive an `AlertContext` with `projectName`, `sessionId`, `evalSummary`, and `enrichSummary` — the complete data needed to decide whether and how to notify.
+- **Session-level firing:** Alerts fire once per session from `processSession()` in the eval queue — the single place where all evals + enrichments complete together. All execution paths route through the queue: initial page loads, background processing, Re-run All, and Re-run single.
+- **Error isolation:** Each alert callback is individually try/caught via `Promise.allSettled`. A throwing alert never blocks other alerts or eval processing. Errors are logged to console.
+- **Chainable API:** `app.alert('name', fn)` chains with `.eval()`, `.enrich()`, and other builder methods.
+- **Types exported:** `AlertContext`, `AlertFunction`, and `RegisteredAlert` are published in the `claudeye` package.
+
+### Progressive Eval & Enrichment Display
+
+- **Progressive loading:** Eval and enrichment panels now show registered item names immediately on page load. Cached results appear instantly; uncached items stream in one-by-one as they complete, rather than blocking the entire panel on the slowest item.
+- **Per-item cached badge:** Each eval and enrichment result row shows a "cached" badge when the result was served from cache, giving visibility into cache hit/miss status at a glance.
+- **Fast cache probe:** New `checkEvalCacheAndList` and `checkEnrichmentCacheAndList` server actions perform a lightweight cache-only lookup — returning registered names plus any cached results in a single fast round-trip (~10-50ms), without running any evals.
+- **Single-enricher execution:** `runEnrichments()` and `runSubagentEnrichments()` now accept an optional `enricherName` parameter to run a single enricher in isolation (mirrors existing eval support).
+- **Self-sufficient panels:** `EvalResultsPanel` and `EnrichmentResultsPanel` no longer depend on a parent-provided `initialResult` prop. Each panel independently probes cache and runs uncached items on mount.
+- **Removed `runSessionDashboard` batch:** The monolithic server action that blocked on all evals + enrichments across session and subagents has been removed. Panels now fetch data independently, eliminating the "slowest item blocks everything" problem.
+
 ## 0.5.6
 
 ### Per-Eval Recompute

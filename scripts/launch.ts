@@ -12,7 +12,7 @@ import { resolve } from "path";
 import { parseScriptArgs } from "./parse-script-args";
 
 export function launch(mode: "dev" | "start"): void {
-  const { claudeProjectsPath: parsedPath, evalsPath, cacheMode, cachePath, authUsers, remainingArgs } = parseScriptArgs(process.argv.slice(2));
+  const { claudeProjectsPath: parsedPath, evalsPath, cacheMode, cachePath, queueInterval, queueConcurrency, authUsers, remainingArgs } = parseScriptArgs(process.argv.slice(2));
 
   console.log(`
   ____ _                 _
@@ -35,7 +35,7 @@ export function launch(mode: "dev" | "start"): void {
   // Build evals dist only in dev mode (production uses pre-built dist)
   if (evalsPath && mode === "dev") {
     console.log("Building evals dist...");
-    execSync("npx tsc -p tsconfig.evals.json", { stdio: "inherit" });
+    execSync("bunx tsc -p tsconfig.evals.json", { stdio: "inherit" });
   }
 
   process.env.CLAUDE_PROJECTS_PATH = claudeProjectsPath;
@@ -58,7 +58,7 @@ export function launch(mode: "dev" | "start"): void {
     }
   }
 
-  const nextProcess = spawn("npx", ["next", mode, ...remainingArgs], {
+  const nextProcess = spawn("bunx", ["--bun", "next", mode, ...remainingArgs], {
     stdio: "inherit",
     shell: true,
     env: {
@@ -67,6 +67,8 @@ export function launch(mode: "dev" | "start"): void {
       ...(evalsPath ? { CLAUDEYE_EVALS_MODULE: evalsPath, CLAUDEYE_DIST_PATH: distPath } : {}),
       ...(cacheMode === "off" ? { CLAUDEYE_CACHE: "off" } : {}),
       ...(cachePath ? { CLAUDEYE_CACHE_PATH: cachePath } : {}),
+      ...(queueInterval !== undefined ? { CLAUDEYE_QUEUE_INTERVAL: String(queueInterval) } : {}),
+      ...(queueConcurrency !== undefined ? { CLAUDEYE_QUEUE_CONCURRENCY: String(queueConcurrency) } : {}),
       ...authEnv,
     },
   });

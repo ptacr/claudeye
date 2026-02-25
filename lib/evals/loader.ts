@@ -10,8 +10,8 @@
  *
  * Sets __CLAUDEYE_LOADING_EVALS__=true before import so app.listen() is a no-op.
  */
-import { readFileSync, writeFileSync, unlinkSync, existsSync } from "fs";
-import { resolve, dirname } from "path";
+import { readFile, writeFile, unlink, access } from "fs/promises";
+import { resolve } from "path";
 import { pathToFileURL } from "url";
 
 const LOADING_KEY = "__CLAUDEYE_LOADING_EVALS__";
@@ -22,12 +22,21 @@ interface GlobalWithLoading {
 
 let loaded = false;
 
-function findDistIndex(): string | null {
+async function fileExists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function findDistIndex(): Promise<string | null> {
   // Env var set by scripts/dev.ts, scripts/start.ts, bin/claudeye.mjs
   const distPath = process.env.CLAUDEYE_DIST_PATH;
   if (distPath) {
     const candidate = resolve(distPath, "index.js");
-    if (existsSync(candidate)) return candidate;
+    if (await fileExists(candidate)) return candidate;
   }
 
   // Fallback: check common locations
@@ -36,7 +45,7 @@ function findDistIndex(): string | null {
     resolve(process.cwd(), "node_modules", "claudeye", "dist", "index.js"),
   ];
   for (const c of candidates) {
-    if (existsSync(c)) return c;
+    if (await fileExists(c)) return c;
   }
   return null;
 }
@@ -55,10 +64,10 @@ export async function ensureEvalsLoaded(): Promise<void> {
 
   let tmpPath: string | null = null;
   try {
-    let code = readFileSync(evalsModule, "utf-8");
+    let code = await readFile(evalsModule, "utf-8");
 
     // Rewrite 'claudeye' imports to the resolved dist path
-    const distIndex = findDistIndex();
+    const distIndex = await findDistIndex();
     if (distIndex) {
       const distUrl = pathToFileURL(distIndex).href;
       // ESM: import { createApp } from 'claudeye'  or  from "claudeye"
@@ -75,14 +84,14 @@ export async function ensureEvalsLoaded(): Promise<void> {
 
     // Write temp .mjs file next to the original (preserves relative imports)
     tmpPath = evalsModule + ".__claudeye_tmp__.mjs";
-    writeFileSync(tmpPath, code, "utf-8");
+    await writeFile(tmpPath, code, "utf-8");
 
     const fileUrl = pathToFileURL(tmpPath).href;
     await import(/* webpackIgnore: true */ fileUrl);
   } finally {
     g[LOADING_KEY] = false;
     if (tmpPath) {
-      try { unlinkSync(tmpPath); } catch { /* ignore cleanup errors */ }
+      try { await unlink(tmpPath); } catch { /* ignore cleanup errors */ }
     }
   }
   loaded = true;

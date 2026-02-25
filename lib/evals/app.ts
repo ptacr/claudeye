@@ -9,12 +9,14 @@
  */
 import { registerEval } from "./registry";
 import { registerEnricher } from "./enrich-registry";
+import { registerAlert } from "./alert-registry";
 import { registerFilter, registerView, registerAggregate } from "./dashboard-registry";
 import { setGlobalCondition } from "./condition-registry";
 import { registerAuthUsers } from "./auth-registry";
 import type { AuthUser } from "./auth-registry";
 import type { ConditionFunction, EvalFunction, EvalScope } from "./types";
 import type { EnrichFunction } from "./enrich-types";
+import type { AlertFunction } from "./alert-types";
 import type { FilterFunction, FilterOptions, ViewOptions, AggregateDefinition, AggregateOptions } from "./dashboard-types";
 
 const LOADING_KEY = "__CLAUDEYE_LOADING_EVALS__";
@@ -67,6 +69,8 @@ export interface ClaudeyeApp {
   eval(name: string, fn: EvalFunction, options?: EvalOptions): ClaudeyeApp;
   /** Register an enricher function. Chainable. */
   enrich(name: string, fn: EnrichFunction, options?: EnrichOptions): ClaudeyeApp;
+  /** Register an alert callback that fires after all evals+enrichments complete. Chainable. */
+  alert(name: string, fn: AlertFunction): ClaudeyeApp;
   /** Configure username/password authentication. Chainable. */
   auth(options: { users: AuthUser[] }): ClaudeyeApp;
   /** Dashboard filter registration namespace. */
@@ -89,6 +93,11 @@ export function createApp(): ClaudeyeApp {
 
     enrich(name: string, fn: EnrichFunction, options?: EnrichOptions): ClaudeyeApp {
       registerEnricher(name, fn, options?.condition, options?.scope, options?.subagentType);
+      return app;
+    },
+
+    alert(name: string, fn: AlertFunction): ClaudeyeApp {
+      registerAlert(name, fn);
       return app;
     },
 

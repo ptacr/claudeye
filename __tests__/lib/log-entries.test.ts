@@ -9,7 +9,7 @@ function line(obj: Record<string, unknown>): string {
 
 describe("parseLogContent", () => {
   describe("basic parsing", () => {
-    it("parses a single user entry", () => {
+    it("parses a single user entry", async () => {
       const content = line({
         type: "user",
         uuid: "u1",
@@ -17,7 +17,7 @@ describe("parseLogContent", () => {
         timestamp: "2024-06-15T12:00:00.000Z",
         message: { role: "user", content: "Hello" },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
       const entry = entries[0] as UserEntry;
       expect(entry.type).toBe("user");
@@ -26,7 +26,7 @@ describe("parseLogContent", () => {
       expect(entry.message.content).toBe("Hello");
     });
 
-    it("parses assistant entry with text block", () => {
+    it("parses assistant entry with text block", async () => {
       const content = line({
         type: "assistant",
         uuid: "a1",
@@ -38,7 +38,7 @@ describe("parseLogContent", () => {
           model: "claude-3-opus",
         },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
       const entry = entries[0] as AssistantEntry;
       expect(entry.type).toBe("assistant");
@@ -50,7 +50,7 @@ describe("parseLogContent", () => {
       expect(entry.message.model).toBe("claude-3-opus");
     });
 
-    it("parses assistant with tool_use block", () => {
+    it("parses assistant with tool_use block", async () => {
       const content = line({
         type: "assistant",
         uuid: "a1",
@@ -68,7 +68,7 @@ describe("parseLogContent", () => {
           ],
         },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
       const entry = entries[0] as AssistantEntry;
       const block = entry.message.content[0];
@@ -80,7 +80,7 @@ describe("parseLogContent", () => {
       }
     });
 
-    it("preserves thinking blocks", () => {
+    it("preserves thinking blocks", async () => {
       const content = line({
         type: "assistant",
         uuid: "a1",
@@ -94,13 +94,13 @@ describe("parseLogContent", () => {
           ],
         },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       const entry = entries[0] as AssistantEntry;
       expect(entry.message.content).toHaveLength(2);
       expect(entry.message.content[0].type).toBe("thinking");
     });
 
-    it("filters out unknown block types in assistant content", () => {
+    it("filters out unknown block types in assistant content", async () => {
       const content = line({
         type: "assistant",
         uuid: "a1",
@@ -114,7 +114,7 @@ describe("parseLogContent", () => {
           ],
         },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       const entry = entries[0] as AssistantEntry;
       expect(entry.message.content).toHaveLength(1);
       expect(entry.message.content[0].type).toBe("text");
@@ -122,7 +122,7 @@ describe("parseLogContent", () => {
   });
 
   describe("tool result enrichment", () => {
-    it("enriches tool_use blocks with matching result", () => {
+    it("enriches tool_use blocks with matching result", async () => {
       const content = [
         line({
           type: "assistant",
@@ -154,7 +154,7 @@ describe("parseLogContent", () => {
         }),
       ].join("\n");
 
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       // Tool result user entry should be excluded from output
       expect(entries).toHaveLength(1);
       const entry = entries[0] as AssistantEntry;
@@ -168,7 +168,7 @@ describe("parseLogContent", () => {
       }
     });
 
-    it("calculates duration = result.timestampMs - assistant.timestampMs", () => {
+    it("calculates duration = result.timestampMs - assistant.timestampMs", async () => {
       const content = [
         line({
           type: "assistant",
@@ -196,14 +196,14 @@ describe("parseLogContent", () => {
         }),
       ].join("\n");
 
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       const entry = entries[0] as AssistantEntry;
       if (entry.message.content[0].type === "tool_use") {
         expect(entry.message.content[0].result!.durationMs).toBe(5500);
       }
     });
 
-    it("tool result user entries are excluded from output array", () => {
+    it("tool result user entries are excluded from output array", async () => {
       const content = [
         line({
           type: "assistant",
@@ -238,13 +238,13 @@ describe("parseLogContent", () => {
         }),
       ].join("\n");
 
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(2); // assistant + regular user, not tool result
       expect(entries.some((e) => e.type === "user")).toBe(true);
       expect(entries.some((e) => e.type === "assistant")).toBe(true);
     });
 
-    it("extracts subagentId from toolUseResult.agentId", () => {
+    it("extracts subagentId from toolUseResult.agentId", async () => {
       const content = [
         line({
           type: "assistant",
@@ -273,7 +273,7 @@ describe("parseLogContent", () => {
         }),
       ].join("\n");
 
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       const entry = entries[0] as AssistantEntry;
       if (entry.message.content[0].type === "tool_use") {
         expect(entry.message.content[0].subagentId).toBe("abc123");
@@ -282,7 +282,7 @@ describe("parseLogContent", () => {
   });
 
   describe("subagent handling", () => {
-    it("Task tool_use gets subagentType and subagentDescription from input", () => {
+    it("Task tool_use gets subagentType and subagentDescription from input", async () => {
       const content = line({
         type: "assistant",
         uuid: "a1",
@@ -303,7 +303,7 @@ describe("parseLogContent", () => {
           ],
         },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       const entry = entries[0] as AssistantEntry;
       if (entry.message.content[0].type === "tool_use") {
         expect(entry.message.content[0].subagentType).toBe("Explore");
@@ -311,7 +311,7 @@ describe("parseLogContent", () => {
       }
     });
 
-    it("non-Task tools do NOT get subagent fields", () => {
+    it("non-Task tools do NOT get subagent fields", async () => {
       const content = line({
         type: "assistant",
         uuid: "a1",
@@ -329,7 +329,7 @@ describe("parseLogContent", () => {
           ],
         },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       const entry = entries[0] as AssistantEntry;
       if (entry.message.content[0].type === "tool_use") {
         expect(entry.message.content[0].subagentType).toBeUndefined();
@@ -339,21 +339,21 @@ describe("parseLogContent", () => {
   });
 
   describe("queue operations", () => {
-    it('first queue-operation gets label "Session Started"', () => {
+    it('first queue-operation gets label "Session Started"', async () => {
       const content = line({
         type: "queue-operation",
         uuid: "q1",
         parentUuid: null,
         timestamp: "2024-06-15T12:00:00.000Z",
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
       const entry = entries[0] as QueueOperationEntry;
       expect(entry.type).toBe("queue-operation");
       expect(entry.label).toBe("Session Started");
     });
 
-    it('subsequent queue-operations get label "Session Resumed"', () => {
+    it('subsequent queue-operations get label "Session Resumed"', async () => {
       const content = [
         line({
           type: "queue-operation",
@@ -374,7 +374,7 @@ describe("parseLogContent", () => {
           timestamp: "2024-06-15T12:02:00.000Z",
         }),
       ].join("\n");
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       const queueEntries = entries.filter(
         (e) => e.type === "queue-operation"
       ) as QueueOperationEntry[];
@@ -385,7 +385,7 @@ describe("parseLogContent", () => {
   });
 
   describe("generic entries", () => {
-    it("parses file-history-snapshot with raw data", () => {
+    it("parses file-history-snapshot with raw data", async () => {
       const content = line({
         type: "file-history-snapshot",
         uuid: "f1",
@@ -393,14 +393,14 @@ describe("parseLogContent", () => {
         timestamp: "2024-06-15T12:00:00.000Z",
         data: { files: ["/a.ts"] },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
       const entry = entries[0] as GenericEntry;
       expect(entry.type).toBe("file-history-snapshot");
       expect(entry.raw).toBeDefined();
     });
 
-    it("parses progress entries", () => {
+    it("parses progress entries", async () => {
       const content = line({
         type: "progress",
         uuid: "p1",
@@ -408,12 +408,12 @@ describe("parseLogContent", () => {
         timestamp: "2024-06-15T12:00:00.000Z",
         progress: 50,
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
       expect(entries[0].type).toBe("progress");
     });
 
-    it("parses system entries", () => {
+    it("parses system entries", async () => {
       const content = line({
         type: "system",
         uuid: "s1",
@@ -421,18 +421,18 @@ describe("parseLogContent", () => {
         timestamp: "2024-06-15T12:00:00.000Z",
         info: "startup",
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
       expect(entries[0].type).toBe("system");
     });
   });
 
   describe("edge cases", () => {
-    it("empty string returns empty array", () => {
-      expect(parseLogContent("")).toEqual([]);
+    it("empty string returns empty array", async () => {
+      expect(await parseLogContent("")).toEqual([]);
     });
 
-    it("blank lines are skipped", () => {
+    it("blank lines are skipped", async () => {
       const content =
         "\n\n" +
         line({
@@ -443,11 +443,11 @@ describe("parseLogContent", () => {
           message: { role: "user", content: "hi" },
         }) +
         "\n\n";
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
     });
 
-    it("malformed JSON lines are skipped", () => {
+    it("malformed JSON lines are skipped", async () => {
       const content = [
         "not valid json",
         line({
@@ -459,21 +459,21 @@ describe("parseLogContent", () => {
         }),
         "{broken",
       ].join("\n");
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(1);
     });
 
-    it("missing timestamp → entry skipped", () => {
+    it("missing timestamp → entry skipped", async () => {
       const content = line({
         type: "user",
         uuid: "u1",
         message: { role: "user", content: "hi" },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(0);
     });
 
-    it("assistant with empty content → entry skipped", () => {
+    it("assistant with empty content → entry skipped", async () => {
       const content = line({
         type: "assistant",
         uuid: "a1",
@@ -481,11 +481,11 @@ describe("parseLogContent", () => {
         timestamp: "2024-06-15T12:00:00.000Z",
         message: { role: "assistant", content: [] },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(0);
     });
 
-    it("output is sorted by timestampMs ascending", () => {
+    it("output is sorted by timestampMs ascending", async () => {
       const content = [
         line({
           type: "user",
@@ -509,7 +509,7 @@ describe("parseLogContent", () => {
           message: { role: "user", content: "middle" },
         }),
       ].join("\n");
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries).toHaveLength(3);
       expect(entries[0].timestampMs).toBeLessThan(entries[1].timestampMs);
       expect(entries[1].timestampMs).toBeLessThan(entries[2].timestampMs);
@@ -517,7 +517,7 @@ describe("parseLogContent", () => {
   });
 
   describe("_source tagging", () => {
-    it("defaults _source to 'session' when no source param", () => {
+    it("defaults _source to 'session' when no source param", async () => {
       const content = line({
         type: "user",
         uuid: "u1",
@@ -525,11 +525,11 @@ describe("parseLogContent", () => {
         timestamp: "2024-06-15T12:00:00.000Z",
         message: { role: "user", content: "Hello" },
       });
-      const entries = parseLogContent(content);
+      const entries = await parseLogContent(content);
       expect(entries[0]._source).toBe("session");
     });
 
-    it("tags entries with explicit source param", () => {
+    it("tags entries with explicit source param", async () => {
       const content = line({
         type: "user",
         uuid: "u1",
@@ -537,11 +537,11 @@ describe("parseLogContent", () => {
         timestamp: "2024-06-15T12:00:00.000Z",
         message: { role: "user", content: "Hello" },
       });
-      const entries = parseLogContent(content, "agent-abc123");
+      const entries = await parseLogContent(content, "agent-abc123");
       expect(entries[0]._source).toBe("agent-abc123");
     });
 
-    it("tags all entry types with _source", () => {
+    it("tags all entry types with _source", async () => {
       const content = [
         line({
           type: "queue-operation",
@@ -574,7 +574,7 @@ describe("parseLogContent", () => {
           info: "startup",
         }),
       ].join("\n");
-      const entries = parseLogContent(content, "agent-xyz");
+      const entries = await parseLogContent(content, "agent-xyz");
       for (const entry of entries) {
         expect(entry._source).toBe("agent-xyz");
       }

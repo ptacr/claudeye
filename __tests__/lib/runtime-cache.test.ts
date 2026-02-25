@@ -59,6 +59,24 @@ describe("runtimeCache", () => {
     expect(result).toBe(42);
   });
 
+  it("coalesces concurrent calls for the same uncached key", async () => {
+    let resolveCall!: (value: string) => void;
+    const fn = vi.fn().mockImplementation(() => new Promise<string>((r) => { resolveCall = r; }));
+    const cached = runtimeCache(fn, 10);
+
+    // Fire two concurrent calls for the same key
+    const p1 = cached("arg1");
+    const p2 = cached("arg1");
+
+    // Resolve the single underlying call
+    resolveCall("shared-result");
+
+    const [r1, r2] = await Promise.all([p1, p2]);
+    expect(fn).toHaveBeenCalledTimes(1);
+    expect(r1).toBe("shared-result");
+    expect(r2).toBe("shared-result");
+  });
+
   describe("LRU eviction with maxSize", () => {
     it("evicts the least-recently-used entry when maxSize is reached", async () => {
       let callCount = 0;

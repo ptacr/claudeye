@@ -59,7 +59,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     const root = document.documentElement;
     root.classList.remove("light", "dark");
     root.classList.add(newTheme);
-    localStorage.setItem("theme", newTheme);
+    try { localStorage.setItem("theme", newTheme); } catch { /* unavailable in SSR/test */ }
   }, []);
 
   return (

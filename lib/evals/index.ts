@@ -18,6 +18,7 @@ export type {
   EvalRunSummary,
   ConditionFunction,
 } from "./types";
+export type { AlertContext, AlertFunction, RegisteredAlert } from "./alert-types";
 export type {
   EnrichmentValue,
   EnrichmentResult,

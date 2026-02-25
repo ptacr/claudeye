@@ -6,18 +6,15 @@ import {
   XCircle,
   AlertTriangle,
   Play,
-  Clock,
   BarChart3,
   RefreshCw,
   ChevronRight,
   ChevronDown,
 } from "lucide-react";
 import { CopyButton } from "@/app/components/copy-button";
-import { runEvals } from "@/app/actions/run-evals";
-import { runSubagentEvals } from "@/app/actions/run-subagent-evals";
-import type { EvalRunSummary, EvalRunResult } from "@/lib/evals/types";
-import type { EvalActionResult } from "@/app/actions/run-evals";
-import type { SubagentEvalActionResult } from "@/app/actions/run-subagent-evals";
+import { checkEvalCacheAndList } from "@/app/actions/check-eval-cache";
+import { queueAndProcessEval } from "@/app/actions/queue-session-eval";
+import type { EvalRunResult } from "@/lib/evals/types";
 
 interface EvalResultsPanelProps {
   projectName: string;
@@ -26,9 +23,12 @@ interface EvalResultsPanelProps {
   subagentType?: string;
   subagentDescription?: string;
   compact?: boolean;
-  /** Pre-fetched result from batched dashboard call. null = loading, undefined = fetch independently. */
-  initialResult?: EvalActionResult | SubagentEvalActionResult | null;
 }
+
+type EvalItemState =
+  | { status: "loading"; name: string }
+  | { status: "done"; name: string; result: EvalRunResult; cached: boolean }
+  | { status: "error"; name: string; error: string };
 
 function ScoreBar({ score }: { score: number }) {
   const pct = Math.round(score * 100);
@@ -61,12 +61,34 @@ function StatusIcon({ result }: { result: EvalRunResult }) {
   return <XCircle className="w-4 h-4 text-red-500" />;
 }
 
+function EvalLoadingRow({ name }: { name: string }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <div className="w-4 h-4 rounded-full bg-muted animate-pulse" />
+      <span className="text-sm font-mono truncate max-w-[200px] text-muted-foreground">{name}</span>
+      <div className="flex-1 h-2 bg-muted rounded-full animate-pulse max-w-[80px]" />
+    </div>
+  );
+}
+
+function EvalErrorRow({ name, error }: { name: string; error: string }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2">
+      <AlertTriangle className="w-4 h-4 text-yellow-500" />
+      <span className="text-sm font-mono truncate max-w-[200px]">{name}</span>
+      <span className="text-xs text-yellow-500 truncate">{error}</span>
+    </div>
+  );
+}
+
 function EvalResultRow({
   result,
+  cached,
   onRerun,
   globalLoading,
 }: {
   result: EvalRunResult;
+  cached: boolean;
   onRerun: (name: string) => Promise<void>;
   globalLoading: boolean;
 }) {
@@ -99,6 +121,11 @@ function EvalResultRow({
         <StatusIcon result={result} />
         <span className="text-sm font-mono truncate max-w-[200px]">{result.name}</span>
         <ScoreBar score={result.score} />
+        {cached && (
+          <span className="text-[10px] font-medium text-muted-foreground/70 bg-muted px-1 py-0.5 rounded">
+            cached
+          </span>
+        )}
         {result.error && (
           <span className="text-xs text-yellow-500 flex-1 truncate min-w-0">
             {result.error}
@@ -133,128 +160,151 @@ function EvalResultRow({
   );
 }
 
-export default function EvalResultsPanel({ projectName, sessionId, agentId, subagentType, subagentDescription, compact, initialResult }: EvalResultsPanelProps) {
-  const [summary, setSummary] = useState<EvalRunSummary | null>(null);
-  const [loading, setLoading] = useState(initialResult == null);
-  const [error, setError] = useState<string | null>(null);
+export default function EvalResultsPanel({ projectName, sessionId, agentId, subagentType, subagentDescription, compact }: EvalResultsPanelProps) {
+  const [items, setItems] = useState<EvalItemState[]>([]);
+  const [probing, setProbing] = useState(true);
   const [noEvals, setNoEvals] = useState(false);
-  const [cached, setCached] = useState(false);
+  const [allCached, setAllCached] = useState(false);
+  const [globalRunning, setGlobalRunning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [collapsed, setCollapsed] = useState(true);
-  const abortRef = useRef<AbortController | null>(null);
-  const singleEvalAbortRef = useRef<AbortController | null>(null);
+  const mountedRef = useRef(true);
 
-  const run = useCallback(async (forceRefresh = false) => {
-    // Abort any in-flight request (global or single-eval)
-    abortRef.current?.abort();
-    singleEvalAbortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+  // Two-phase loading on mount
+  useEffect(() => {
+    mountedRef.current = true;
+    let stale = false;
 
-    setLoading(true);
-    setError(null);
-    try {
-      const result = agentId
-        ? await runSubagentEvals(projectName, sessionId, agentId, subagentType, subagentDescription, forceRefresh)
-        : await runEvals(projectName, sessionId, forceRefresh);
-      if (controller.signal.aborted) return;
-      if (!result.ok) {
-        setError(result.error);
-      } else if (!result.hasEvals) {
-        setNoEvals(true);
-      } else {
-        setSummary(result.summary);
-        setCached(result.cached);
-      }
-    } catch (e) {
-      if (controller.signal.aborted) return;
-      setError(e instanceof Error ? e.message : "Failed to run evals");
-    } finally {
-      if (!controller.signal.aborted) {
-        setLoading(false);
-      }
-    }
-  }, [projectName, sessionId, agentId, subagentType, subagentDescription]);
+    checkEvalCacheAndList(projectName, sessionId, agentId, subagentType).then(probe => {
+      if (stale || !mountedRef.current) return;
+      if (!probe.ok) { setError(probe.error); setProbing(false); return; }
+      if (!probe.hasEvals) { setNoEvals(true); setProbing(false); return; }
 
-  const runSingleEval = useCallback(async (evalName: string) => {
-    // Abort any previous in-flight single-eval request
-    singleEvalAbortRef.current?.abort();
-    const controller = new AbortController();
-    singleEvalAbortRef.current = controller;
-
-    try {
-      const result = agentId
-        ? await runSubagentEvals(projectName, sessionId, agentId, subagentType, subagentDescription, false, evalName)
-        : await runEvals(projectName, sessionId, false, evalName);
-      if (controller.signal.aborted) return;
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      if (!result.hasEvals) return;
-
-      // Merge the single fresh result into existing summary
-      const freshResult = result.summary.results[0];
-      if (!freshResult) return;
-
-      if (controller.signal.aborted) return;
-      setSummary((prev) => {
-        if (!prev) return prev;
-        const updatedResults = prev.results.map((r) =>
-          r.name === freshResult.name ? freshResult : r,
-        );
-        let passCount = 0, failCount = 0, errorCount = 0, skippedCount = 0, totalDurationMs = 0;
-        for (const r of updatedResults) {
-          totalDurationMs += r.durationMs || 0;
-          if (r.skipped) skippedCount++;
-          else if (r.error) errorCount++;
-          else if (r.pass) passCount++;
-          else failCount++;
-        }
-        return {
-          ...prev,
-          results: updatedResults,
-          passCount,
-          failCount,
-          errorCount,
-          skippedCount,
-          totalDurationMs,
-        };
+      // Phase 1: show names immediately — cached results filled in, rest as loading
+      const initial: EvalItemState[] = probe.names.map(name => {
+        const cachedResult = probe.cachedResults.find(r => r.name === name);
+        return cachedResult
+          ? { status: "done" as const, name, result: cachedResult, cached: true }
+          : { status: "loading" as const, name };
       });
-      setCached(false);
-    } catch (e) {
-      if (controller.signal.aborted) return;
-      setError(e instanceof Error ? e.message : "Failed to rerun eval");
+      setItems(initial);
+      setAllCached(probe.uncachedNames.length === 0);
+      setProbing(false);
+
+      // Phase 2: process uncached evals in parallel, per-item (unified queue path)
+      if (probe.uncachedNames.length > 0) {
+        const subagent = agentId ? { agentId, subagentType, subagentDescription } : undefined;
+        Promise.all(probe.uncachedNames.map(async (evalName) => {
+          try {
+            const result = await queueAndProcessEval(projectName, sessionId, evalName, false, subagent);
+            if (stale || !mountedRef.current) return;
+            if (!result.ok && result.error === "__queued__") {
+              // Leave item in loading state — it will complete via the queue
+              return;
+            }
+            if (result.ok) {
+              setItems(prev => prev.map(i => i.name === evalName
+                ? { status: "done", name: evalName, result: result.result, cached: false }
+                : i
+              ));
+            } else {
+              setItems(prev => prev.map(i => i.name === evalName
+                ? { status: "error", name: evalName, error: result.error }
+                : i
+              ));
+            }
+          } catch (e) {
+            if (stale || !mountedRef.current) return;
+            setItems(prev => prev.map(i =>
+              i.name === evalName ? { status: "error", name: evalName, error: e instanceof Error ? e.message : "Failed" } : i
+            ));
+          }
+        }));
+      }
+    }).catch(err => {
+      if (stale || !mountedRef.current) return;
+      setError(err instanceof Error ? err.message : "Failed to load evals");
+      setProbing(false);
+    });
+
+    return () => { stale = true; mountedRef.current = false; };
+  }, [projectName, sessionId, agentId, subagentType, subagentDescription]);
+
+  // Re-run All handler
+  const runAll = useCallback(async () => {
+    setGlobalRunning(true);
+    setItems(prev => prev.map(i => ({ status: "loading" as const, name: i.name })));
+    const subagent = agentId ? { agentId, subagentType, subagentDescription } : undefined;
+    try {
+      const evalNames = items.map(i => i.name);
+      await Promise.all(evalNames.map(async (evalName) => {
+        try {
+          const result = await queueAndProcessEval(projectName, sessionId, evalName, true, subagent);
+          if (!mountedRef.current) return;
+          if (!result.ok && result.error === "__queued__") return;
+          if (result.ok) {
+            setItems(prev => prev.map(i => i.name === evalName
+              ? { status: "done" as const, name: evalName, result: result.result, cached: false }
+              : i
+            ));
+          } else {
+            setItems(prev => prev.map(i => i.name === evalName
+              ? { status: "error" as const, name: evalName, error: result.error }
+              : i
+            ));
+          }
+        } catch (e) {
+          if (!mountedRef.current) return;
+          setItems(prev => prev.map(i => i.name === evalName
+            ? { status: "error" as const, name: evalName, error: e instanceof Error ? e.message : "Failed" }
+            : i
+          ));
+        }
+      }));
+      if (mountedRef.current) setAllCached(false);
+    } finally {
+      if (mountedRef.current) setGlobalRunning(false);
+    }
+  }, [projectName, sessionId, agentId, subagentType, subagentDescription, items]);
+
+  // Per-item Re-run handler
+  const rerunSingleEval = useCallback(async (evalName: string) => {
+    setAllCached(false);
+    setItems(prev => prev.map(i => i.name === evalName ? { status: "loading", name: evalName } : i));
+    const subagent = agentId ? { agentId, subagentType, subagentDescription } : undefined;
+    try {
+      const result = await queueAndProcessEval(projectName, sessionId, evalName, true, subagent);
+      if (!mountedRef.current) return;
+      if (!result.ok && result.error === "__queued__") return;
+      if (result.ok) {
+        setItems(prev => prev.map(i => i.name === evalName
+          ? { status: "done", name: evalName, result: result.result, cached: false }
+          : i
+        ));
+      } else {
+        setItems(prev => prev.map(i => i.name === evalName
+          ? { status: "error", name: evalName, error: result.error }
+          : i
+        ));
+      }
+    } catch (err) {
+      if (!mountedRef.current) return;
+      setItems(prev => prev.map(i =>
+        i.name === evalName
+          ? { status: "error", name: evalName, error: err instanceof Error ? err.message : "Re-run failed" }
+          : i
+      ));
     }
   }, [projectName, sessionId, agentId, subagentType, subagentDescription]);
 
-  // Apply pre-fetched result from dashboard batch call
-  useEffect(() => {
-    if (initialResult === undefined) return; // no dashboard — will fetch independently
-    if (initialResult === null) return; // dashboard still loading — wait
-    // Apply the result directly
-    if (!initialResult.ok) {
-      setError(initialResult.error);
-    } else if (
-      ("hasEvals" in initialResult && !initialResult.hasEvals) ||
-      ("hasEvals" in initialResult === false)
-    ) {
-      setNoEvals(true);
-    } else if ("summary" in initialResult) {
-      setSummary(initialResult.summary);
-      setCached(initialResult.cached);
-    }
-    setLoading(false);
-  }, [initialResult]);
-
-  // Auto-run on mount when no dashboard result is provided; abort on unmount
-  useEffect(() => {
-    if (initialResult !== undefined) return; // dashboard handles this
-    run(false);
-    return () => {
-      abortRef.current?.abort();
-      singleEvalAbortRef.current?.abort();
-    };
-  }, [run, initialResult]);
+  // Derived header values
+  const doneItems = items.filter((i): i is Extract<EvalItemState, { status: "done" }> => i.status === "done");
+  const loadingCount = items.filter(i => i.status === "loading").length;
+  const visibleResults = doneItems.map(i => i.result).filter(r => !r.skipped);
+  const passCount = visibleResults.filter(r => !r.error && r.pass).length;
+  const failCount = visibleResults.filter(r => !r.error && !r.pass).length;
+  const errorCount = doneItems.filter(i => !!i.result.error).length + items.filter(i => i.status === "error").length;
+  const isLoading = probing || loadingCount > 0 || globalRunning;
 
   // No evals registered — render nothing
   if (noEvals) return null;
@@ -262,20 +312,20 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
   const panelPadding = compact ? "p-2.5" : "p-4";
   const fontSize = compact ? "text-xs" : "text-sm";
 
-  // Loading state before first result
-  if (loading && !summary) {
+  // Probing state (brief, before names arrive)
+  if (probing) {
     return (
       <div className={`bg-card border border-border rounded-lg ${panelPadding}`}>
         <div className={`flex items-center gap-2 ${fontSize} text-muted-foreground`}>
           <RefreshCw className="w-4 h-4 animate-spin" />
-          Running evals...
+          Loading evals...
         </div>
       </div>
     );
   }
 
-  // Error state
-  if (error && !summary) {
+  // Error state before any items loaded
+  if (error && items.length === 0) {
     return (
       <div className={`bg-card border border-border rounded-lg ${panelPadding}`}>
         <div className={`flex items-center gap-2 ${fontSize} text-destructive`}>
@@ -286,10 +336,11 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
     );
   }
 
-  if (!summary) return null;
+  if (items.length === 0) return null;
 
-  const visibleResults = summary.results.filter((r) => !r.skipped);
-  if (visibleResults.length === 0) return null;
+  // Filter visible items (exclude skipped done items)
+  const visibleItems = items.filter(i => !(i.status === "done" && i.result.skipped));
+  if (visibleItems.length === 0 && !isLoading) return null;
 
   return (
     <div className={`bg-card border border-border rounded-lg ${panelPadding} ${collapsed ? "" : "space-y-3"}`}>
@@ -307,56 +358,62 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
         </button>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-3 text-xs">
-            <div className="flex items-center gap-1.5">
-              <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-              <span className="font-medium">{summary.passCount}</span>
-              <span className="text-muted-foreground">passed</span>
-            </div>
-            {summary.failCount > 0 && (
+            {passCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <CheckCircle className="w-3.5 h-3.5 text-green-500" />
+                <span className="font-medium">{passCount}</span>
+                <span className="text-muted-foreground">passed</span>
+              </div>
+            )}
+            {failCount > 0 && (
               <div className="flex items-center gap-1.5">
                 <XCircle className="w-3.5 h-3.5 text-red-500" />
-                <span className="font-medium">{summary.failCount}</span>
+                <span className="font-medium">{failCount}</span>
                 <span className="text-muted-foreground">failed</span>
               </div>
             )}
-            {summary.errorCount > 0 && (
+            {errorCount > 0 && (
               <div className="flex items-center gap-1.5">
                 <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
-                <span className="font-medium">{summary.errorCount}</span>
+                <span className="font-medium">{errorCount}</span>
                 <span className="text-muted-foreground">errored</span>
               </div>
             )}
-            <div className="flex items-center gap-1.5">
-              <Clock className="w-3.5 h-3.5 text-muted-foreground" />
-              <span className="text-muted-foreground">{summary.totalDurationMs}ms</span>
-              {cached && (
-                <span className="text-[10px] font-medium text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded">
-                  cached
-                </span>
-              )}
-            </div>
+            {loadingCount > 0 && (
+              <div className="flex items-center gap-1.5">
+                <RefreshCw className="w-3.5 h-3.5 text-muted-foreground animate-spin" />
+                <span className="text-muted-foreground">{loadingCount} running...</span>
+              </div>
+            )}
+            {allCached && !isLoading && (
+              <span className="text-[10px] font-medium text-muted-foreground/70 bg-muted px-1.5 py-0.5 rounded">
+                cached
+              </span>
+            )}
           </div>
           <button
-            onClick={() => run(true)}
-            disabled={loading}
+            onClick={() => runAll()}
+            disabled={isLoading}
             className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-medium rounded border border-primary/30 bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50"
           >
-            {loading ? (
+            {globalRunning ? (
               <RefreshCw className="w-3 h-3 animate-spin" />
             ) : (
               <Play className="w-3 h-3" />
             )}
-            {loading ? "Running..." : "Re-run"}
+            {globalRunning ? "Running..." : "Re-run"}
           </button>
         </div>
       </div>
 
-      {/* Summary bar + Results list (collapsible) */}
+      {/* Results list (collapsible) */}
       {!collapsed && (
         <div className="divide-y divide-border/50">
-          {visibleResults.map((result) => (
-            <EvalResultRow key={result.name} result={result} onRerun={runSingleEval} globalLoading={loading} />
-          ))}
+          {visibleItems.map(item => {
+            if (item.status === "loading") return <EvalLoadingRow key={item.name} name={item.name} />;
+            if (item.status === "error") return <EvalErrorRow key={item.name} name={item.name} error={item.error} />;
+            return <EvalResultRow key={item.name} result={item.result} cached={item.cached} onRerun={rerunSingleEval} globalLoading={globalRunning} />;
+          })}
         </div>
       )}
     </div>

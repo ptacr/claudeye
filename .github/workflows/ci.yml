@@ -15,26 +15,25 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node-version: [20, 22]
+        bun-version: [latest]
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: ${{ matrix.node-version }}
-          cache: npm
+          bun-version: ${{ matrix.bun-version }}
 
-      - run: npm ci
+      - run: bun install
 
       - name: Lint
-        run: npm run lint
+        run: bun run lint
 
       - name: Type check
-        run: npx tsc --noEmit
+        run: bunx tsc --noEmit
 
       - name: Test
-        run: npm run test:run
+        run: bun run test:run
 
       - name: Build
-        run: npm run build
+        run: bun run build

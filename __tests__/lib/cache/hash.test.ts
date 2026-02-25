@@ -3,7 +3,7 @@ import { createHash } from "crypto";
 import { mkdtemp, rm, writeFile, utimes } from "fs/promises";
 import { join } from "path";
 import { tmpdir } from "os";
-import { hashSessionFile, hashSubagentFile, hashEvalsModule, hashProjectsPath, _resetPathHashCache } from "@/lib/cache/hash";
+import { hashSessionFile, hashSubagentFile, hashEvalsModule, hashProjectsPath, _resetPathHashCache, _resetStatCache, _resetEvalsModuleHashCache } from "@/lib/cache/hash";
 
 // Mock paths to point at our temp directory
 let tempDir: string;
@@ -14,10 +14,12 @@ vi.mock("@/lib/paths", () => ({
 
 describe("hashSessionFile", () => {
   beforeEach(async () => {
+    _resetStatCache();
     tempDir = await mkdtemp(join(tmpdir(), "claudeye-hash-test-"));
   });
 
   afterEach(async () => {
+    _resetStatCache();
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -53,6 +55,7 @@ describe("hashSessionFile", () => {
     await writeFile(filePath, "short", "utf-8");
     const hash1 = await hashSessionFile("p", "s");
 
+    _resetStatCache();
     await writeFile(filePath, "much longer content here", "utf-8");
     const hash2 = await hashSessionFile("p", "s");
 
@@ -68,6 +71,7 @@ describe("hashSessionFile", () => {
     await writeFile(filePath, "same content", "utf-8");
     const hash1 = await hashSessionFile("p", "s");
 
+    _resetStatCache();
     // Manually change mtime while keeping same size
     const oldDate = new Date("2020-01-01");
     await utimes(filePath, oldDate, oldDate);
@@ -137,11 +141,13 @@ describe("hashEvalsModule", () => {
   const originalEnv = process.env;
 
   beforeEach(async () => {
+    _resetEvalsModuleHashCache();
     tempDir = await mkdtemp(join(tmpdir(), "claudeye-hash-test-"));
     process.env = { ...originalEnv };
   });
 
   afterEach(async () => {
+    _resetEvalsModuleHashCache();
     process.env = originalEnv;
     await rm(tempDir, { recursive: true, force: true });
   });
@@ -172,6 +178,7 @@ describe("hashEvalsModule", () => {
     await writeFile(evalsFile, "content-v1", "utf-8");
     const hash1 = await hashEvalsModule();
 
+    _resetEvalsModuleHashCache();
     await writeFile(evalsFile, "content-v2", "utf-8");
     const hash2 = await hashEvalsModule();
 

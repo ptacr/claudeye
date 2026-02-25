@@ -30,7 +30,8 @@ Claudeye lets you replay agent executions, grade them with custom evals, and sur
 ## Quick Start
 
 ```bash
-npm install -g claudeye && claudeye
+bun install -g claudeye && claudeye
+# or: npm install -g claudeye && claudeye
 ```
 
 Opens your browser at `localhost:8020`. Reads from `~/.claude/projects` by default.
@@ -67,8 +68,10 @@ Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session
 ### Utilize
 
 - **Custom enrichments** - compute metadata (token counts, quality signals, labels) as key-value pairs
+- **Alerts** - register callbacks via `app.alert()` that fire after all evals and enrichments complete (Slack webhooks, CI notifications, logging)
 - **Dashboard views & filters** - organize filters into named views, each with focused filter tiles (boolean toggles, range sliders, multi-select dropdowns) and a filterable sessions table
 - **Dashboard aggregates** - define cross-session summary tables with `app.dashboard.aggregate()`, using `{ collect, reduce }` for full control over output
+- **Unified queue** - all evals and enrichments (session, subagent, UI, background) go through a single priority queue with bounded concurrency, live tracking at `/queue`
 - **JSONL export** - download raw session logs
 - **Auto-refresh** - monitor live sessions at 5s, 10s, or 30s intervals
 - **Light/dark theme** - with system preference detection
@@ -111,6 +114,12 @@ claudeye --auth-user admin:secret --auth-user viewer:readonly
 
 # Clear cached results
 claudeye --cache-clear
+
+# Enable background queue processing (scan every 60 seconds)
+CLAUDEYE_QUEUE_INTERVAL=60 claudeye --evals ./my-evals.js
+
+# Background processing with higher concurrency
+CLAUDEYE_QUEUE_INTERVAL=30 CLAUDEYE_QUEUE_CONCURRENCY=5 claudeye --evals ./my-evals.js
 ```
 
 ## Custom Evals & Enrichments
@@ -244,6 +253,48 @@ The collect function receives an `AggregateContext` with log entries, stats, eva
 
 [Read more: Dashboard Aggregates API &rarr;](docs/api-reference.md#appdashboardaggregate-name-definition-options)
 
+### Alerts
+
+Alerts fire after all evals and enrichments complete for a session. Use them for Slack webhooks, CI notifications, logging, or any post-processing:
+
+```js
+app.alert('slack-on-failure', async ({ projectName, sessionId, evalSummary }) => {
+  if (evalSummary && evalSummary.failCount > 0) {
+    await fetch('https://hooks.slack.com/services/...', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `${evalSummary.failCount} evals failed for ${projectName}/${sessionId}`,
+      }),
+    });
+  }
+});
+
+app.alert('log-results', ({ projectName, sessionId, evalSummary, enrichSummary }) => {
+  console.log(`[${projectName}/${sessionId}] evals: ${evalSummary?.passCount ?? 0} pass, ${evalSummary?.failCount ?? 0} fail`);
+});
+```
+
+Alerts fire when all evals and enrichments for a session are complete — the unified queue checks after each item. This covers initial page loads, background processing, and all re-run actions. Each alert is individually error-isolated: a throwing callback never blocks other alerts or eval processing.
+
+[Read more: Alerts API and AlertContext type &rarr;](docs/api-reference.md#appalert-name-fn)
+
+### Background Queue Processing
+
+Enable background processing to automatically scan and evaluate all sessions on a timer:
+
+```bash
+CLAUDEYE_QUEUE_INTERVAL=60 claudeye --evals ./my-evals.js
+```
+
+The background processor scans all projects for uncached evals/enrichments and enqueues them individually at LOW priority. UI requests are enqueued at HIGH priority, jumping ahead of background work. Track all queue activity in real-time at `/queue` (three tabs: In Queue, Processing, Processed) or via the navbar dropdown.
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `CLAUDEYE_QUEUE_INTERVAL` | Background scan interval in seconds | disabled |
+| `CLAUDEYE_QUEUE_CONCURRENCY` | Max parallel items per batch | `3` |
+| `CLAUDEYE_QUEUE_HISTORY_TTL` | Seconds to keep completed items | `3600` |
+
 ### Conditions
 
 Conditions gate when evals and enrichments run. Set a **global condition** with `app.condition()` to skip everything for certain sessions, or add a **per-item condition** in the options:
@@ -297,7 +348,7 @@ app.eval('agent-check', ({ entries, source }) => {
 
 ### `app.listen()`
 
-You can also run your evals file directly with `node my-evals.js` if you include `app.listen()`. This spawns the dashboard as a child process. When loaded via `--evals`, `listen()` automatically becomes a no-op.
+You can also run your evals file directly with `bun my-evals.js` (or `node my-evals.js`) if you include `app.listen()`. This spawns the dashboard as a child process. When loaded via `--evals`, `listen()` automatically becomes a no-op.
 
 [Full API reference: all types, interfaces, and detailed examples &rarr;](docs/api-reference.md)
 
@@ -351,17 +402,56 @@ All three methods can be combined — users from CLI flags, the env var, and `ap
 
 When auth is active, all UI routes redirect to `/login`. After signing in, a signed session cookie (24h expiry) grants access. A **Sign out** button appears in the navbar.
 
+## Deployment with PM2
+
+For production deployments, use PM2 with Bun as the interpreter:
+
+```js
+// ecosystem.config.cjs
+module.exports = {
+  apps: [{
+    name: 'claudeye',
+    script: 'node_modules/.bin/next',
+    args: 'start',
+    interpreter: 'bun',
+    cwd: '/path/to/claudeye',
+    env: {
+      PORT: 8020,
+      HOSTNAME: '0.0.0.0',
+      CLAUDE_PROJECTS_PATH: '/home/user/.claude/projects',
+      CLAUDEYE_EVALS_MODULE: './my-evals.js',
+      CLAUDEYE_QUEUE_INTERVAL: '60',
+    },
+  }],
+};
+```
+
+```bash
+# Start
+pm2 start ecosystem.config.cjs
+
+# Monitor
+pm2 monit
+
+# Auto-restart on reboot
+pm2 startup
+pm2 save
+```
+
 ## How It Works
 
-1. `createApp()` + `app.eval()` / `app.enrich()` / `app.condition()` / `app.dashboard.view()` / `app.dashboard.filter()` / `app.dashboard.aggregate()` register functions in global registries
+1. `createApp()` + `app.eval()` / `app.enrich()` / `app.alert()` / `app.condition()` / `app.dashboard.view()` / `app.dashboard.filter()` / `app.dashboard.aggregate()` register functions in global registries
 2. When you run `claudeye --evals ./my-file.js`, the server dynamically imports your file, populating the registries
-3. When the dashboard loads a session, server actions run all registered evals and enrichers against the combined raw JSONL lines (session + all subagent logs)
-4. The global condition is checked first. If it fails, everything is skipped
-5. Per-item conditions are checked individually. Skipped items don't block others
-6. Each function is individually error-isolated. If one throws, the others still run
-7. Results are serialized and displayed in separate panels in the dashboard UI
-8. Named dashboard views (`/dashboard`) show a view index; each view (`/dashboard/[viewName]`) computes filter values incrementally (only new/changed sessions are processed), then filters and paginates server-side for efficiency
-9. Dashboard aggregates run a separate server action that collects per-session values (with eval/enrichment/filter results) and reduces them via user-defined reduce functions into sortable summary tables
+3. All eval/enrichment execution routes through a unified priority queue. Each individual eval and enrichment is a separate queue item. UI requests use HIGH priority; background scanning uses LOW priority
+4. Each item runs through: cache check → execute if uncached → cache result → check if session complete → fire alerts if complete
+5. The global condition is checked first. If it fails, everything is skipped
+6. Per-item conditions are checked individually. Skipped items don't block others
+7. Each function is individually error-isolated. If one throws, the others still run
+8. After all evals and enrichments complete, registered alerts fire with the complete `AlertContext` (eval summary + enrichment summary)
+9. Results are serialized and displayed in separate panels in the dashboard UI
+10. Named dashboard views (`/dashboard`) show a view index; each view (`/dashboard/[viewName]`) computes filter values incrementally (only new/changed sessions are processed), then filters and paginates server-side for efficiency
+11. Dashboard aggregates run a separate server action that collects per-session values (with eval/enrichment/filter results) and reduces them via user-defined reduce functions into sortable summary tables
+12. When `--queue-interval` is set, a background processor scans for uncached items on a timer. Track queue state at `/queue` or via the navbar dropdown
 
 ## Contributing
 
@@ -370,8 +460,8 @@ Contributions are welcome! To get started:
 ```bash
 git clone https://github.com/exospherehost/claudeye.git
 cd claudeye
-npm install
-npm run dev
+bun install
+bun run dev
 ```
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for the full guide - available scripts, project structure, and PR guidelines.

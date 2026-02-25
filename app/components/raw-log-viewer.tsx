@@ -5,7 +5,7 @@
  */
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import { useWindowVirtualizer } from "@tanstack/react-virtual";
 import { ChevronDown, Wrench } from "lucide-react";
 import type { LogEntry, ToolUseBlock } from "@/lib/log-entries";
@@ -14,7 +14,6 @@ import { QueueDivider } from "@/app/components/log-viewer/queue-divider";
 import { EntryRow } from "@/app/components/log-viewer/entry-row";
 import EvalResultsPanel from "@/app/components/eval-results-panel";
 import EnrichmentResultsPanel from "@/app/components/enrichment-results-panel";
-import { runSessionDashboard, type DashboardResult } from "@/app/actions/run-session-dashboard";
 
 // ── Subagent metadata extraction ──
 
@@ -273,16 +272,6 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
 
   const toolStats = useMemo(() => extractToolStats(sessionEntries), [sessionEntries]);
 
-  const [dashboardResult, setDashboardResult] = useState<DashboardResult | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    runSessionDashboard(projectName, sessionId, subagents).then((result) => {
-      if (!cancelled) setDashboardResult(result);
-    });
-    return () => { cancelled = true; };
-  }, [projectName, sessionId, subagents]);
-
   const [subagentsCollapsed, setSubagentsCollapsed] = useState(false);
   const [collapsedSubagentIds, setCollapsedSubagentIds] = useState<Set<string>>(new Set());
   const [logsCollapsed, setLogsCollapsed] = useState(false);
@@ -300,9 +289,9 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
     <div className="space-y-4">
       <StatsBar entries={sessionEntries} />
 
-      <EvalResultsPanel projectName={projectName} sessionId={sessionId} initialResult={dashboardResult?.sessionEvals ?? null} />
+      <EvalResultsPanel projectName={projectName} sessionId={sessionId} />
 
-      <EnrichmentResultsPanel projectName={projectName} sessionId={sessionId} initialResult={dashboardResult?.sessionEnrichments ?? null} />
+      <EnrichmentResultsPanel projectName={projectName} sessionId={sessionId} />
 
       {subagents.length > 0 && (
         <div className="space-y-3">
@@ -341,7 +330,6 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
                     subagentType={sa.type}
                     subagentDescription={sa.description}
                     compact
-                    initialResult={dashboardResult?.subagents.find(s => s.agentId === sa.id)?.evals ?? null}
                   />
                   <EnrichmentResultsPanel
                     projectName={projectName}
@@ -350,7 +338,6 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
                     subagentType={sa.type}
                     subagentDescription={sa.description}
                     compact
-                    initialResult={dashboardResult?.subagents.find(s => s.agentId === sa.id)?.enrichments ?? null}
                   />
                   {(() => {
                     const saTools = extractToolStats(subagentEntriesMap.get(sa.id) || []);

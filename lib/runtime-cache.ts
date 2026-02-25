@@ -23,6 +23,7 @@ export function runtimeCache<TArgs extends unknown[], TResult>(
   options?: RuntimeCacheOptions,
 ): (...args: TArgs) => Promise<TResult> {
   const cache = new Map<string, { data: TResult; expiry: number }>();
+  const inflight = new Map<string, Promise<TResult>>();
   const maxSize = options?.maxSize;
 
   return async (...args: TArgs): Promise<TResult> => {
@@ -37,15 +38,27 @@ export function runtimeCache<TArgs extends unknown[], TResult>(
       return entry.data;
     }
 
-    const data = await fn(...args);
+    // Coalesce concurrent requests for the same uncached key
+    const existing = inflight.get(key);
+    if (existing) return existing;
 
-    // Evict least-recently-used entry if at capacity
-    if (maxSize && cache.size >= maxSize) {
-      const oldestKey = cache.keys().next().value!;
-      cache.delete(oldestKey);
-    }
-
-    cache.set(key, { data, expiry: Date.now() + revalidateSeconds * 1000 });
-    return data;
+    const promise = fn(...args).then(
+      (data) => {
+        inflight.delete(key);
+        // Evict least-recently-used entry if at capacity
+        if (maxSize && cache.size >= maxSize) {
+          const oldestKey = cache.keys().next().value!;
+          cache.delete(oldestKey);
+        }
+        cache.set(key, { data, expiry: Date.now() + revalidateSeconds * 1000 });
+        return data;
+      },
+      (err) => {
+        inflight.delete(key);
+        throw err;
+      },
+    );
+    inflight.set(key, promise);
+    return promise;
   };
 }

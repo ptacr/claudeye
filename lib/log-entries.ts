@@ -1,7 +1,6 @@
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { getClaudeProjectsPath } from "./paths";
-import { extractSubagentIds } from "./extract-subagent-ids";
 import { resolveSubagentPath } from "./resolve-subagent-path";
 import { runtimeCache } from "./runtime-cache";
 import { formatDate } from "./utils";
@@ -140,6 +139,10 @@ function extractToolResultContent(
   return undefined;
 }
 
+/**
+ * Synchronous parseRawLines for callers that don't pass a source tag.
+ * Keeps its own minimal loop (no subagent detection needed).
+ */
 export function parseRawLines(fileContent: string, source?: LogSource): Record<string, unknown>[] {
   return fileContent
     .split("\n")
@@ -160,31 +163,46 @@ export interface SessionLogData {
   subagentIds: string[];
 }
 
-// ── Parser ──
+interface ParseFileResult {
+  entries: LogEntry[];
+  rawLines: Record<string, unknown>[];
+  subagentIds: string[];
+}
+
+// ── Unified Single-Pass Parser ──
 
 /**
- * Parses JSONL log content into structured log entries.
- * Returns entries sorted by timestamp ascending (earliest first).
- * Tool use blocks are enriched with their corresponding results.
+ * Single-pass async parser that produces entries, rawLines, and subagentIds
+ * from one iteration over the JSONL content. Yields to the event loop every
+ * 200 lines to prevent blocking during large file processing.
  */
-export function parseLogContent(fileContent: string, source: LogSource = "session"): LogEntry[] {
+async function parseFileContent(fileContent: string, source: LogSource): Promise<ParseFileResult> {
   const lines = fileContent.split("\n").filter((line) => line.trim() !== "");
 
-  // Single pass: parse entries and build tool result map simultaneously
   const toolResultMap = new Map<
     string,
     { timestamp: string; timestampMs: number; content?: string; agentId?: string }
   >();
   const entries: LogEntry[] = [];
+  const rawLines: Record<string, unknown>[] = [];
+  const subagentIdSet = new Set<string>();
   let seenQueue = false;
 
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    // Yield to the event loop every 200 lines to prevent starvation
+    if (i > 0 && i % 200 === 0) await new Promise<void>(r => setImmediate(r));
+
+    const line = lines[i];
     let raw: Record<string, unknown>;
     try {
       raw = JSON.parse(line) as Record<string, unknown>;
     } catch {
       continue;
     }
+
+    // Collect raw line with source tag (mirrors parseRawLines with source)
+    const rawCopy = { ...raw, _source: source };
+    rawLines.push(rawCopy);
 
     const type = raw.type as string | undefined;
     const timestamp = raw.timestamp as string;
@@ -193,13 +211,6 @@ export function parseLogContent(fileContent: string, source: LogSource = "sessio
     const date = new Date(timestamp);
     const timestampMs = date.getTime();
 
-    // Tool results arrive as "user" entries whose content array contains
-    // `tool_result` blocks.  We capture them in a lookup map keyed by
-    // `tool_use_id` so the enrichment pass (below) can attach each result
-    // back to its corresponding `tool_use` block on the assistant entry.
-    // These user entries are intentionally *skipped* from the output list
-    // because they carry no standalone user message — they're purely
-    // plumbing between the assistant's tool call and the tool's response.
     if (type === "user") {
       const message = raw.message as Record<string, unknown> | undefined;
       if (Array.isArray(message?.content)) {
@@ -208,6 +219,12 @@ export function parseLogContent(fileContent: string, source: LogSource = "sessio
         if (hasToolResult) {
           const toolUseResult = raw.toolUseResult as Record<string, unknown> | undefined;
           const agentId = (typeof toolUseResult?.agentId === "string") ? toolUseResult.agentId : undefined;
+
+          // Detect subagent IDs (mirrors extractSubagentIds)
+          if (agentId && /^[a-f0-9]+$/.test(agentId)) {
+            subagentIdSet.add(agentId);
+          }
+
           for (const block of blocks) {
             if (block.type !== "tool_result") continue;
             const toolUseId = block.tool_use_id as string | undefined;
@@ -287,12 +304,13 @@ export function parseLogContent(fileContent: string, source: LogSource = "sessio
     }
   }
 
-  // Enrichment pass: walk every assistant entry's tool_use blocks and
-  // attach the matching tool result (timestamp, content, duration).
-  // This lets the UI render tool calls and their results together in a
-  // single card rather than as separate entries.
+  // Enrichment pass: attach tool results to their corresponding tool_use blocks
+  // Yield every 200 assistant entries to prevent event-loop starvation
+  let enrichCount = 0;
   for (const entry of entries) {
     if (entry.type !== "assistant") continue;
+    enrichCount++;
+    if (enrichCount % 200 === 0) await new Promise<void>(r => setImmediate(r));
     for (const block of entry.message.content) {
       if (block.type !== "tool_use") continue;
       const resultInfo = toolResultMap.get(block.id);
@@ -313,10 +331,25 @@ export function parseLogContent(fileContent: string, source: LogSource = "sessio
     }
   }
 
-  // Sort by timestamp ascending (numeric comparison, no object creation)
+  // Yield before sort for large arrays
+  if (entries.length > 500) await new Promise<void>(r => setImmediate(r));
+
+  // Sort by timestamp ascending
   entries.sort((a, b) => a.timestampMs - b.timestampMs);
 
-  return entries;
+  return { entries, rawLines, subagentIds: Array.from(subagentIdSet) };
+}
+
+// ── Public wrappers ──
+
+/**
+ * Parses JSONL log content into structured log entries.
+ * Returns entries sorted by timestamp ascending (earliest first).
+ * Tool use blocks are enriched with their corresponding results.
+ */
+export async function parseLogContent(fileContent: string, source: LogSource = "session"): Promise<LogEntry[]> {
+  const result = await parseFileContent(fileContent, source);
+  return result.entries;
 }
 
 /**
@@ -332,10 +365,9 @@ export async function parseSessionLog(
   const filePath = join(projectsPath, projectName, `${sessionId}.jsonl`);
   const fileContent = await readFile(filePath, "utf-8");
 
-  const sessionEntries = parseLogContent(fileContent, "session");
-  const sessionRawLines = parseRawLines(fileContent, "session");
+  const { entries: sessionEntries, rawLines: sessionRawLines, subagentIds } =
+    await parseFileContent(fileContent, "session");
 
-  const subagentIds = extractSubagentIds(fileContent);
   if (subagentIds.length === 0) {
     return { entries: sessionEntries, rawLines: sessionRawLines, subagentIds: [] };
   }
@@ -347,10 +379,8 @@ export async function parseSessionLog(
       const agentPath = await resolveSubagentPath(projectsPath, projectName, sessionId, agentId);
       if (!agentPath) return null;
       const agentContent = await readFile(agentPath, "utf-8");
-      return {
-        entries: parseLogContent(agentContent, agentSource),
-        rawLines: parseRawLines(agentContent, agentSource),
-      };
+      const { entries, rawLines } = await parseFileContent(agentContent, agentSource);
+      return { entries, rawLines };
     })
   );
 
@@ -365,6 +395,9 @@ export async function parseSessionLog(
     }
   }
 
+  // Yield before sort for large combined arrays
+  if (allEntries.length > 500) await new Promise<void>(r => setImmediate(r));
+
   // Sort combined entries by timestamp
   allEntries.sort((a, b) => a.timestampMs - b.timestampMs);
 
@@ -374,5 +407,5 @@ export async function parseSessionLog(
 export const getCachedSessionLog = runtimeCache(
   (projectName: string, sessionId: string) => parseSessionLog(projectName, sessionId),
   60,
-  { maxSize: 20 },
+  { maxSize: 50 },
 );

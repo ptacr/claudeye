@@ -1,6 +1,6 @@
 # Claudeye API Reference
 
-Full API documentation for Claudeye's custom evals, enrichments, and dashboard filters. For a quick overview, see the [README](../README.md).
+Full API documentation for Claudeye's custom evals, enrichments, alerts, and dashboard filters. For a quick overview, see the [README](../README.md).
 
 ---
 
@@ -588,6 +588,172 @@ All three users (`ops`, `admin`, `dev`) would be valid.
 
 ---
 
+## `app.alert(name, fn)`
+
+Register an alert callback that fires after all evals and enrichments complete for a session. Alerts are the hook point for Slack webhooks, CI notifications, logging, or any post-processing logic.
+
+- **`name`** - unique string identifier for the alert (re-registering replaces the previous callback)
+- **`fn`** - function receiving an `AlertContext` and returning `void | Promise<void>`
+
+Alerts fire when the last eval/enrichment for a session completes — the unified queue checks after each item whether all results are cached, and fires alerts once the set is complete. All execution paths route through the queue:
+- **Initial page load** → `queuePerItem()` per eval/enrichment → alerts fire when last item completes
+- **Background processing** → `scanAndEnqueue()` → individual items at LOW priority → alerts fire
+- **Re-run All** → parallel `queuePerItem()` calls with `forceRefresh` → alerts fire
+- **Re-run single** → `queuePerItem()` for one item → alerts fire if it was the last missing piece
+
+Each alert callback is individually try/caught via `Promise.allSettled`. A throwing alert never blocks other alerts or eval processing. Errors are logged to console.
+
+### Examples
+
+```js
+// Slack webhook on eval failure
+app.alert('slack-on-failure', async ({ projectName, sessionId, evalSummary }) => {
+  if (evalSummary && evalSummary.failCount > 0) {
+    await fetch('https://hooks.slack.com/services/T.../B.../xxx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `${evalSummary.failCount} evals failed for ${projectName}/${sessionId}`,
+      }),
+    });
+  }
+});
+
+// Console logging
+app.alert('log-results', ({ projectName, sessionId, evalSummary, enrichSummary }) => {
+  const evals = evalSummary
+    ? `${evalSummary.passCount} pass, ${evalSummary.failCount} fail, ${evalSummary.errorCount} error`
+    : 'no evals';
+  const enrichments = enrichSummary
+    ? `${enrichSummary.results.length} enrichments (${enrichSummary.errorCount} errors)`
+    : 'no enrichments';
+  console.log(`[ALERT] ${projectName}/${sessionId}: ${evals} | ${enrichments}`);
+});
+
+// Write results to a file for CI
+app.alert('ci-report', async ({ projectName, sessionId, evalSummary }) => {
+  if (!evalSummary) return;
+  const fs = await import('fs/promises');
+  await fs.appendFile('eval-results.jsonl', JSON.stringify({
+    projectName,
+    sessionId,
+    passCount: evalSummary.passCount,
+    failCount: evalSummary.failCount,
+    results: evalSummary.results.map(r => ({ name: r.name, pass: r.pass, score: r.score })),
+    timestamp: new Date().toISOString(),
+  }) + '\n');
+});
+
+// Conditional alert: only fire for sessions with enrichment errors
+app.alert('enrichment-errors', ({ projectName, sessionId, enrichSummary }) => {
+  if (enrichSummary && enrichSummary.errorCount > 0) {
+    console.warn(`[WARN] ${enrichSummary.errorCount} enrichment errors in ${projectName}/${sessionId}`);
+  }
+});
+```
+
+### `AlertContext`
+
+```ts
+interface AlertContext {
+  projectName: string;              // Encoded project folder name
+  sessionId: string;                // Session UUID
+  evalSummary?: EvalRunSummary;     // Present when evals registered & ran
+  enrichSummary?: EnrichRunSummary; // Present when enrichments registered & ran
+}
+```
+
+`evalSummary` and `enrichSummary` contain **all** results for the session — both cached and freshly computed. This means the alert always sees the complete picture, even when only a single eval was re-run (the rest come from cache).
+
+### `AlertFunction`
+
+```ts
+type AlertFunction = (context: AlertContext) => void | Promise<void>;
+```
+
+### `RegisteredAlert`
+
+```ts
+interface RegisteredAlert {
+  name: string;
+  fn: AlertFunction;
+}
+```
+
+### `EvalRunSummary` (alert context)
+
+```ts
+interface EvalRunSummary {
+  results: EvalRunResult[];
+  totalDurationMs: number;
+  passCount: number;
+  failCount: number;
+  errorCount: number;
+  skippedCount: number;
+}
+```
+
+### `EnrichRunSummary` (alert context)
+
+```ts
+interface EnrichRunSummary {
+  results: EnrichRunResult[];
+  totalDurationMs: number;
+  errorCount: number;
+  skippedCount: number;
+}
+```
+
+---
+
+## Background Queue Processing
+
+The eval queue handles both foreground (UI) and background processing. It is used automatically for all eval/enrichment execution — no configuration needed for foreground processing.
+
+### Enabling Background Processing
+
+```bash
+# Scan and process uncached sessions every 60 seconds
+CLAUDEYE_QUEUE_INTERVAL=60 claudeye --evals ./my-evals.js
+
+# With higher concurrency (default: 3)
+CLAUDEYE_QUEUE_INTERVAL=30 CLAUDEYE_QUEUE_CONCURRENCY=5 claudeye --evals ./my-evals.js
+```
+
+### How the Queue Works
+
+The queue is **unified** — every individual eval and enrichment (session-scoped, subagent-scoped, UI-triggered, or background-scanned) passes through a single priority queue with bounded concurrency.
+
+1. **Foreground (always active):** When a session page loads or a re-run is triggered, each uncached eval/enrichment is enqueued at HIGH priority via `queuePerItem()` and processed immediately (up to the concurrency limit)
+2. **Background (opt-in):** When `CLAUDEYE_QUEUE_INTERVAL` is set, a timer scans all projects for uncached sessions and enqueues individual uncached evals/enrichments at LOW priority
+3. **Priority:** HIGH (foreground/UI) items are always processed before LOW (background) items
+4. **Dedup:** If the same item is enqueued twice, the existing entry is upgraded to the higher priority
+5. **Subagent support:** Subagent evals/enrichments go through the same queue. The session ID is encoded as `sessionId/agent-agentId` for tracking purposes
+6. **Alerts:** After each successful item completes, the queue checks if all evals+enrichments for that session are cached. When complete, alerts fire
+
+### Queue Status UI
+
+The queue status is visible in two places:
+
+**Navbar dropdown** — shows current processing items (max 7) and pending items with priority badges. Badge count = pending + processing.
+
+**`/queue` details page** — three tabs:
+- **In Queue** — pending items with type badge, item name, session link, priority, queued time
+- **Processing** — active items with spinner, type badge, item name, session link, started time
+- **Processed** — completed items with type badge, item name, session link, duration, success/fail icon, completed time
+
+**Dashboard panel** — collapsible panel showing queue state with processing and pending tables, background processor indicator, and error list.
+
+All views auto-refresh and self-hide when there's no queue activity.
+
+### Environment Variables
+
+- `CLAUDEYE_QUEUE_INTERVAL` — seconds between background scans (enables background processing)
+- `CLAUDEYE_QUEUE_CONCURRENCY` — max parallel items (default: 3)
+- `CLAUDEYE_QUEUE_HISTORY_TTL` — seconds to keep completed items in history (default: 3600)
+
+---
+
 ## `app.listen(port?, options?)`
 
 Start the Claudeye dashboard server.
@@ -904,7 +1070,7 @@ Cache invalidation works the same way, based on the subagent log file's mtime+si
 
 ## Full Example
 
-A complete evals file combining evals, enrichments, dashboard views, conditions, and subagent scope:
+A complete evals file combining evals, enrichments, alerts, dashboard views, conditions, and subagent scope:
 
 ```js
 import { createApp } from 'claudeye';
@@ -972,6 +1138,29 @@ app.enrich('subagent-info',
   }),
   { condition: ({ stats }) => stats.subagentCount > 0 }
 );
+
+// --- Alerts ---
+
+// Log all results
+app.alert('log-results', ({ projectName, sessionId, evalSummary, enrichSummary }) => {
+  const evals = evalSummary
+    ? `${evalSummary.passCount} pass, ${evalSummary.failCount} fail`
+    : 'no evals';
+  console.log(`[ALERT] ${projectName}/${sessionId}: ${evals}`);
+});
+
+// Slack webhook on eval failure
+app.alert('slack-on-failure', async ({ projectName, sessionId, evalSummary }) => {
+  if (evalSummary && evalSummary.failCount > 0) {
+    await fetch('https://hooks.slack.com/services/...', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: `${evalSummary.failCount} evals failed for ${projectName}/${sessionId}`,
+      }),
+    });
+  }
+});
 
 // --- Dashboard views (visible at /dashboard) ---
 
@@ -1055,12 +1244,12 @@ app.enrich('agent-summary', ({ entries, source, stats }) => ({
 
 ## Tips
 
-- Each eval, enricher, and filter is wrapped in a try/catch. If one throws, the others still run and the error is shown in the UI.
+- Each eval, enricher, filter, and alert is wrapped in a try/catch. If one throws, the others still run. Eval/enricher/filter errors are shown in the UI; alert errors are logged to console.
 - Eval scores are clamped to 0-1. If you don't provide a score, it defaults to 1.0.
-- Eval, enricher, filter, and condition functions can all be async.
-- Re-registering with the same name replaces the previous function.
-- Click "Re-run" in either panel to re-execute against the current session (always bypasses cache).
-- You can mix `app.eval()`, `app.enrich()`, `app.condition()`, `app.dashboard.filter()`, `app.dashboard.view()`, and `app.dashboard.aggregate()` calls freely in the same file.
+- Eval, enricher, filter, condition, and alert functions can all be async.
+- Re-registering with the same name replaces the previous function (applies to evals, enrichers, filters, and alerts).
+- Click "Re-run" in either panel to re-execute against the current session. Re-runs route through the unified queue, so alerts fire when all items for the session are complete.
+- You can mix `app.eval()`, `app.enrich()`, `app.alert()`, `app.condition()`, `app.dashboard.filter()`, `app.dashboard.view()`, and `app.dashboard.aggregate()` calls freely in the same file.
 - Per-item condition errors are treated as eval/enrichment errors (not skips), so you'll see the error message in the UI.
 - Dashboard filter return types are auto-detected from the first non-null value: `boolean` &rarr; toggle, `number` &rarr; range slider, `string` &rarr; multi-select.
 - Filter values are computed incrementally server-side (only new/changed sessions). Filtering and pagination also happen server-side, with debounced re-fetches on filter changes.
@@ -1069,4 +1258,6 @@ app.enrich('agent-summary', ({ entries, source, stats }) => ({
 - `app.dashboard.filter()` registers to the "default" view for backward compatibility.
 - `app.dashboard.aggregate()` works with both default and named views. Always provide `{ collect, reduce }` for full control over the output table.
 - Aggregate collect functions receive `AggregateContext` with eval/enrichment/filter results. Computation is incremental and uses a separate execution path from filters.
+- Alerts receive complete data (all eval + enrichment results, both cached and fresh) regardless of whether a single eval or all evals were re-run.
+- Set `CLAUDEYE_QUEUE_INTERVAL` to enable background processing. The Queue Status panel on `/dashboard` shows live queue state.
 - `entries` contains combined session + subagent data. Each entry has `_source` (`"session"` or `"agent-{id}"`). Use `source` from the context to filter: `entries.filter(e => e._source === source)`.

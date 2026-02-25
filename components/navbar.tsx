@@ -8,6 +8,7 @@ import { LayoutDashboard, FolderOpen, LogOut } from "lucide-react";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { ReachDevelopers } from "@/components/reach-developers";
+import { QueueStatus } from "@/components/queue-status";
 import { RefreshButton } from "@/app/components/refresh-button";
 import { logout } from "@/app/actions/auth";
 
@@ -81,6 +82,7 @@ export const Navbar: React.FC = () => {
             <div className="w-px h-6 bg-border mx-1" />
             <ReachDevelopers />
             <ThemeToggle />
+            <QueueStatus />
             {authActive && (
               <>
                 <div className="w-px h-6 bg-border mx-1" />

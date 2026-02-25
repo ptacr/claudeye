@@ -10,6 +10,8 @@ export interface ParsedScriptArgs {
   evalsPath: string | undefined;
   cacheMode: string | undefined;
   cachePath: string | undefined;
+  queueInterval: number | undefined;
+  queueConcurrency: number | undefined;
   authUsers: string[];
   remainingArgs: string[];
 }
@@ -20,6 +22,8 @@ export function parseScriptArgs(argv: string[]): ParsedScriptArgs {
   let evalsPath: string | undefined;
   let cacheMode: string | undefined;
   let cachePath: string | undefined;
+  let queueInterval: number | undefined;
+  let queueConcurrency: number | undefined;
   const authUsers: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -93,6 +97,48 @@ export function parseScriptArgs(argv: string[]): ParsedScriptArgs {
       i--;
       continue;
     }
+
+    if (flag === "--queue-interval") {
+      const value = inlineValue ?? args[i + 1];
+      if (value === undefined || (inlineValue === null && value.startsWith("-"))) {
+        console.error("Error: --queue-interval requires a positive integer (seconds)");
+        process.exit(1);
+      }
+      if (!/^\d+$/.test(value)) {
+        console.error("Error: --queue-interval must be a positive integer");
+        process.exit(1);
+      }
+      const parsed = parseInt(value, 10);
+      if (parsed <= 0) {
+        console.error("Error: --queue-interval must be a positive integer");
+        process.exit(1);
+      }
+      queueInterval = parsed;
+      args.splice(i, inlineValue !== null ? 1 : 2);
+      i--;
+      continue;
+    }
+
+    if (flag === "--queue-concurrency") {
+      const value = inlineValue ?? args[i + 1];
+      if (value === undefined || (inlineValue === null && value.startsWith("-"))) {
+        console.error("Error: --queue-concurrency requires a positive integer");
+        process.exit(1);
+      }
+      if (!/^\d+$/.test(value)) {
+        console.error("Error: --queue-concurrency must be a positive integer");
+        process.exit(1);
+      }
+      const parsed = parseInt(value, 10);
+      if (parsed <= 0) {
+        console.error("Error: --queue-concurrency must be a positive integer");
+        process.exit(1);
+      }
+      queueConcurrency = parsed;
+      args.splice(i, inlineValue !== null ? 1 : 2);
+      i--;
+      continue;
+    }
   }
 
   // Sanitize process.argv to mask passwords (prevents secondary leakage via
@@ -113,5 +159,5 @@ export function parseScriptArgs(argv: string[]): ParsedScriptArgs {
     }
   }
 
-  return { claudeProjectsPath, evalsPath, cacheMode, cachePath, authUsers, remainingArgs: args };
+  return { claudeProjectsPath, evalsPath, cacheMode, cachePath, queueInterval, queueConcurrency, authUsers, remainingArgs: args };
 }
