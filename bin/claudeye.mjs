@@ -37,6 +37,10 @@ Options:
   --cache-clear               Clear all cached results and exit
   --no-open                   Don't auto-open the browser
   --auth-user <user:pass>     Add an authenticated user (repeatable)
+  --queue-interval <secs>     Background scan interval in seconds (enables queue)
+  --queue-concurrency <num>   Max parallel items per batch (default: 2)
+  --queue-history-ttl <secs>  Seconds to keep completed items (default: 3600)
+  --queue-max-sessions <num>  Max sessions to process per scan (default: 8, 0=unlimited)
   -h, --help                  Show this help message
 `.trim();
 
@@ -50,6 +54,10 @@ let evalsPath = "";
 let cacheMode = "on";
 let cachePath = "";
 let cacheClear = false;
+let queueInterval;
+let queueConcurrency;
+let queueHistoryTtl;
+let queueMaxSessions;
 const authUsers = [];
 
 /** Read the next value for a flag, supporting both `--flag value` and `--flag=value`. */
@@ -62,6 +70,28 @@ function readFlagValue(flag, idx) {
     process.exit(1);
   }
   return next;
+}
+
+function parsePositiveIntFlag(flag, inlineValue, idx) {
+  const raw = inlineValue ?? readFlagValue(flag, idx);
+  const val = parseInt(raw, 10);
+  if (!/^\d+$/.test(raw) || val <= 0) {
+    console.error(`Error: ${flag} must be a positive integer\n`);
+    console.log(HELP);
+    process.exit(1);
+  }
+  return val;
+}
+
+function parseNonNegativeIntFlag(flag, inlineValue, idx) {
+  const raw = inlineValue ?? readFlagValue(flag, idx);
+  const val = parseInt(raw, 10);
+  if (!/^\d+$/.test(raw) || val < 0) {
+    console.error(`Error: ${flag} must be a non-negative integer\n`);
+    console.log(HELP);
+    process.exit(1);
+  }
+  return val;
 }
 
 for (let i = 0; i < args.length; i++) {
@@ -118,6 +148,26 @@ for (let i = 0; i < args.length; i++) {
       authUsers.push(inlineValue ?? readFlagValue(flag, i));
       if (inlineValue === null) i++;
       break;
+    case "--queue-interval": {
+      queueInterval = parsePositiveIntFlag(flag, inlineValue, i);
+      if (inlineValue === null) i++;
+      break;
+    }
+    case "--queue-concurrency": {
+      queueConcurrency = parsePositiveIntFlag(flag, inlineValue, i);
+      if (inlineValue === null) i++;
+      break;
+    }
+    case "--queue-history-ttl": {
+      queueHistoryTtl = parsePositiveIntFlag(flag, inlineValue, i);
+      if (inlineValue === null) i++;
+      break;
+    }
+    case "--queue-max-sessions": {
+      queueMaxSessions = parseNonNegativeIntFlag(flag, inlineValue, i);
+      if (inlineValue === null) i++;
+      break;
+    }
     default:
       console.error(`Unknown option: ${args[i]}\n`);
       console.log(HELP);
@@ -240,6 +290,12 @@ function logServerInfo(port, localUrl, resolvedAuthUsers) {
     const usernames = resolvedAuthUsers.map((u) => u.split(":")[0]).join(", ");
     console.log(`  Auth:     enabled for ${usernames}`);
   }
+  if (queueInterval !== undefined) {
+    const concurrency = queueConcurrency ?? 2;
+    const ttl = queueHistoryTtl ?? 3600;
+    const maxSess = queueMaxSessions ?? 8;
+    console.log(`  Queue:    every ${queueInterval}s, concurrency ${concurrency}, history TTL ${ttl}s, max sessions ${maxSess}`);
+  }
   if (cacheMode === "off") {
     console.log(`  Cache:    disabled`);
   } else {
@@ -294,6 +350,18 @@ async function main() {
   }
   if (cachePath) {
     env.CLAUDEYE_CACHE_PATH = cachePath;
+  }
+  if (queueInterval !== undefined) {
+    env.CLAUDEYE_QUEUE_INTERVAL = String(queueInterval);
+  }
+  if (queueConcurrency !== undefined) {
+    env.CLAUDEYE_QUEUE_CONCURRENCY = String(queueConcurrency);
+  }
+  if (queueHistoryTtl !== undefined) {
+    env.CLAUDEYE_QUEUE_HISTORY_TTL = String(queueHistoryTtl);
+  }
+  if (queueMaxSessions !== undefined) {
+    env.CLAUDEYE_QUEUE_MAX_SESSIONS = String(queueMaxSessions);
   }
   if (resolvedAuthUsers.length > 0) {
     env.CLAUDEYE_AUTH_USERS = resolvedAuthUsers.join(",");

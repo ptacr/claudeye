@@ -12,7 +12,7 @@ import { resolve } from "path";
 import { parseScriptArgs } from "./parse-script-args";
 
 export function launch(mode: "dev" | "start"): void {
-  const { claudeProjectsPath: parsedPath, evalsPath, cacheMode, cachePath, queueInterval, queueConcurrency, authUsers, remainingArgs } = parseScriptArgs(process.argv.slice(2));
+  const { claudeProjectsPath: parsedPath, evalsPath, cacheMode, cachePath, queueInterval, queueConcurrency, queueHistoryTtl, queueMaxSessions, authUsers, remainingArgs } = parseScriptArgs(process.argv.slice(2));
 
   console.log(`
   ____ _                 _
@@ -69,6 +69,8 @@ export function launch(mode: "dev" | "start"): void {
       ...(cachePath ? { CLAUDEYE_CACHE_PATH: cachePath } : {}),
       ...(queueInterval !== undefined ? { CLAUDEYE_QUEUE_INTERVAL: String(queueInterval) } : {}),
       ...(queueConcurrency !== undefined ? { CLAUDEYE_QUEUE_CONCURRENCY: String(queueConcurrency) } : {}),
+      ...(queueHistoryTtl !== undefined ? { CLAUDEYE_QUEUE_HISTORY_TTL: String(queueHistoryTtl) } : {}),
+      ...(queueMaxSessions !== undefined ? { CLAUDEYE_QUEUE_MAX_SESSIONS: String(queueMaxSessions) } : {}),
       ...authEnv,
     },
   });

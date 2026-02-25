@@ -118,6 +118,11 @@ function getQueueState(): UnifiedQueueState {
 const getConcurrency = () =>
   parseInt(process.env.CLAUDEYE_QUEUE_CONCURRENCY ?? "2", 10) || 2;
 
+const getMaxSessions = () => {
+  const val = parseInt(process.env.CLAUDEYE_QUEUE_MAX_SESSIONS ?? "8", 10);
+  return Number.isNaN(val) ? 8 : val;
+};
+
 // ── Completed ring buffer pruning ──
 
 function pruneCompleted(state: UnifiedQueueState): void {
@@ -398,13 +403,17 @@ export async function scanAndEnqueue(): Promise<void> {
     await ensureEvalsLoaded();
 
     const hasWork = hasEvals() || hasEnrichers();
-    if (!hasWork) return;
+    if (!hasWork) {
+      console.log("[eval-queue] Scan skipped: no evals or enrichers registered");
+      return;
+    }
 
     const state = getQueueState();
     state.scannedAt = Date.now();
 
     const evals = getSessionScopedEvals();
     const enrichers = getSessionScopedEnrichers();
+    console.log(`[eval-queue] Scan starting: ${evals.length} eval(s), ${enrichers.length} enricher(s)`);
 
     const projects = await getCachedProjectFolders();
 
@@ -434,8 +443,17 @@ export async function scanAndEnqueue(): Promise<void> {
       }
     }
 
+    console.log(`[eval-queue] Discovered ${sessions.length} session(s) across ${projects.length} project(s)`);
+
     // Sort newest first within LOW priority
     sessions.sort((a, b) => b.lastModified - a.lastModified);
+
+    // Cap the number of sessions to process (0 = unlimited)
+    const maxSessions = getMaxSessions();
+    if (maxSessions > 0 && sessions.length > maxSessions) {
+      console.log(`[eval-queue] Capping to ${maxSessions} most recent session(s)`);
+      sessions.splice(maxSessions);
+    }
 
     // Dynamically import workers to avoid circular deps at module level
     const { processSessionEval } = await import("@/app/actions/process-session-eval");
@@ -447,6 +465,7 @@ export async function scanAndEnqueue(): Promise<void> {
 
     // Check cache for each session and enqueue uncached items individually
     // Process in small batches with yield points to avoid starving the event loop
+    let enqueued = 0;
     const BATCH_SIZE = 5;
     for (let i = 0; i < sessions.length; i += BATCH_SIZE) {
       const batch = sessions.slice(i, i + BATCH_SIZE);
@@ -479,11 +498,13 @@ export async function scanAndEnqueue(): Promise<void> {
                 () => processSessionEval(s.projectName, s.sessionId, evals[r.idx].name),
                 { priority: Priority.LOW },
               ).catch(() => {}); // fire-and-forget
+              enqueued++;
             } else {
               queuePerItem("enrichment", s.projectName, s.sessionId, enrichers[r.idx].name,
                 () => processSessionEnrichment(s.projectName, s.sessionId, enrichers[r.idx].name),
                 { priority: Priority.LOW },
               ).catch(() => {}); // fire-and-forget
+              enqueued++;
             }
           }
         }),
@@ -494,6 +515,8 @@ export async function scanAndEnqueue(): Promise<void> {
         await new Promise(resolve => setTimeout(resolve, 0));
       }
     }
+
+    console.log(`[eval-queue] Scan complete: enqueued ${enqueued} item(s)`);
   } catch (err) {
     console.error("[eval-queue] scanAndEnqueue error:", err);
   }
@@ -506,6 +529,11 @@ export function startBackgroundProcessor(intervalSec: number): void {
   if (state.intervalId) return; // Already running
 
   console.log(`[eval-queue] Starting background processor (interval: ${intervalSec}s)`);
+
+  // Run first scan immediately so items appear without waiting for the interval
+  scanAndEnqueue().catch((err) => {
+    console.error("[eval-queue] Initial scan error:", err);
+  });
 
   const scheduleNext = () => {
     state.intervalId = setTimeout(async () => {

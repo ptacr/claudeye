@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { renderWithProviders } from "../helpers/test-utils";
@@ -19,7 +19,9 @@ describe("ThemeToggle", () => {
     const btn = screen.getByLabelText("Switch to light mode");
     await user.click(btn);
 
-    // After click → should now be in light mode → label says "Switch to dark mode"
-    expect(screen.getByLabelText("Switch to dark mode")).toBeInTheDocument();
+    // MutationObserver fires asynchronously in jsdom, so wait for the re-render
+    await waitFor(() => {
+      expect(screen.getByLabelText("Switch to dark mode")).toBeInTheDocument();
+    });
   });
 });

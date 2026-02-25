@@ -714,10 +714,10 @@ The eval queue handles both foreground (UI) and background processing. It is use
 
 ```bash
 # Scan and process uncached sessions every 60 seconds
-CLAUDEYE_QUEUE_INTERVAL=60 claudeye --evals ./my-evals.js
+claudeye --evals ./my-evals.js --queue-interval 60
 
-# With higher concurrency (default: 3)
-CLAUDEYE_QUEUE_INTERVAL=30 CLAUDEYE_QUEUE_CONCURRENCY=5 claudeye --evals ./my-evals.js
+# With higher concurrency (default: 2)
+claudeye --evals ./my-evals.js --queue-interval 30 --queue-concurrency 5
 ```
 
 ### How the Queue Works
@@ -748,9 +748,10 @@ All views auto-refresh and self-hide when there's no queue activity.
 
 ### Environment Variables
 
-- `CLAUDEYE_QUEUE_INTERVAL` — seconds between background scans (enables background processing)
-- `CLAUDEYE_QUEUE_CONCURRENCY` — max parallel items (default: 3)
-- `CLAUDEYE_QUEUE_HISTORY_TTL` — seconds to keep completed items in history (default: 3600)
+- `CLAUDEYE_QUEUE_INTERVAL` — seconds between background scans (enables background processing). CLI: `--queue-interval`
+- `CLAUDEYE_QUEUE_CONCURRENCY` — max parallel items (default: 2). CLI: `--queue-concurrency`
+- `CLAUDEYE_QUEUE_HISTORY_TTL` — seconds to keep completed items in history (default: 3600). CLI: `--queue-history-ttl`
+- `CLAUDEYE_QUEUE_MAX_SESSIONS` — max sessions to process per scan (default: 8, 0=unlimited). CLI: `--queue-max-sessions`
 
 ---
 

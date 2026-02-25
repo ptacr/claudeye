@@ -89,6 +89,10 @@ Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session
 | `--cache-path <path>` | Custom cache directory | `~/.claudeye/cache` |
 | `--cache-clear` | Clear all cached results and exit | - |
 | `--no-open` | Don't auto-open the browser | - |
+| `--queue-interval <secs>` | Background scan interval in seconds | disabled |
+| `--queue-concurrency <num>` | Max parallel items per batch | `2` |
+| `--queue-history-ttl <secs>` | Seconds to keep completed items | `3600` |
+| `--queue-max-sessions <num>` | Max sessions to process per scan (0=unlimited) | `8` |
 | `-h, --help` | Show help | - |
 
 ### Examples
@@ -116,10 +120,10 @@ claudeye --auth-user admin:secret --auth-user viewer:readonly
 claudeye --cache-clear
 
 # Enable background queue processing (scan every 60 seconds)
-CLAUDEYE_QUEUE_INTERVAL=60 claudeye --evals ./my-evals.js
+claudeye --evals ./my-evals.js --queue-interval 60
 
 # Background processing with higher concurrency
-CLAUDEYE_QUEUE_INTERVAL=30 CLAUDEYE_QUEUE_CONCURRENCY=5 claudeye --evals ./my-evals.js
+claudeye --evals ./my-evals.js --queue-interval 30 --queue-concurrency 5
 ```
 
 ## Custom Evals & Enrichments
@@ -284,16 +288,17 @@ Alerts fire when all evals and enrichments for a session are complete — the un
 Enable background processing to automatically scan and evaluate all sessions on a timer:
 
 ```bash
-CLAUDEYE_QUEUE_INTERVAL=60 claudeye --evals ./my-evals.js
+claudeye --evals ./my-evals.js --queue-interval 60
 ```
 
-The background processor scans all projects for uncached evals/enrichments and enqueues them individually at LOW priority. UI requests are enqueued at HIGH priority, jumping ahead of background work. Track all queue activity in real-time at `/queue` (three tabs: In Queue, Processing, Processed) or via the navbar dropdown.
+The background processor scans all projects for uncached evals/enrichments and enqueues them individually at LOW priority. UI requests are enqueued at HIGH priority, jumping ahead of background work. Track all queue activity in real-time at `/queue` (three tabs: In Queue, Processing, Processed) or via the navbar dropdown. All queue settings are also available as environment variables (`CLAUDEYE_QUEUE_INTERVAL`, `CLAUDEYE_QUEUE_CONCURRENCY`, `CLAUDEYE_QUEUE_HISTORY_TTL`, `CLAUDEYE_QUEUE_MAX_SESSIONS`).
 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `CLAUDEYE_QUEUE_INTERVAL` | Background scan interval in seconds | disabled |
-| `CLAUDEYE_QUEUE_CONCURRENCY` | Max parallel items per batch | `3` |
+| `CLAUDEYE_QUEUE_CONCURRENCY` | Max parallel items per batch | `2` |
 | `CLAUDEYE_QUEUE_HISTORY_TTL` | Seconds to keep completed items | `3600` |
+| `CLAUDEYE_QUEUE_MAX_SESSIONS` | Max sessions to process per scan (0=unlimited) | `8` |
 
 ### Conditions
 

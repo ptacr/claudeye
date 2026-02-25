@@ -63,8 +63,9 @@ claudeye/
 | `CLAUDEYE_CACHE` | `off` to disable caching |
 | `CLAUDEYE_CACHE_PATH` | Custom cache directory |
 | `CLAUDEYE_QUEUE_INTERVAL` | Background queue scan interval in seconds |
-| `CLAUDEYE_QUEUE_CONCURRENCY` | Max parallel items (default: 3) |
+| `CLAUDEYE_QUEUE_CONCURRENCY` | Max parallel items (default: 2) |
 | `CLAUDEYE_QUEUE_HISTORY_TTL` | Seconds to keep completed items in history (default: 3600) |
+| `CLAUDEYE_QUEUE_MAX_SESSIONS` | Max sessions to process per scan (default: 8, 0=unlimited) |
 | `CLAUDEYE_AUTH_USERS` | Comma-separated `user:pass` pairs |
 | `CLAUDEYE_AUTH_SECRET` | HMAC secret for session cookies (auto-generated if not set) |
 

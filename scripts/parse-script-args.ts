@@ -12,8 +12,68 @@ export interface ParsedScriptArgs {
   cachePath: string | undefined;
   queueInterval: number | undefined;
   queueConcurrency: number | undefined;
+  queueHistoryTtl: number | undefined;
+  queueMaxSessions: number | undefined;
   authUsers: string[];
   remainingArgs: string[];
+}
+
+function parseStringFlag(
+  flagName: string,
+  errorLabel: string,
+  inlineValue: string | null,
+  args: string[],
+  index: number,
+  options?: { resolve?: boolean },
+): { value: string; spliceCount: number } {
+  const raw = inlineValue ?? args[index + 1];
+  if (raw === undefined || (inlineValue === null && raw.startsWith("-"))) {
+    console.error(`Error: ${flagName} requires ${errorLabel}`);
+    process.exit(1);
+  }
+  const value = options?.resolve ? resolve(raw) : raw;
+  return { value, spliceCount: inlineValue !== null ? 1 : 2 };
+}
+
+function parsePositiveIntFlag(
+  flagName: string,
+  inlineValue: string | null,
+  args: string[],
+  index: number,
+): { value: number; spliceCount: number } {
+  const raw = inlineValue ?? args[index + 1];
+  if (raw === undefined || (inlineValue === null && raw.startsWith("-"))) {
+    console.error(`Error: ${flagName} requires a positive integer`);
+    process.exit(1);
+  }
+  if (!/^\d+$/.test(raw)) {
+    console.error(`Error: ${flagName} must be a positive integer`);
+    process.exit(1);
+  }
+  const parsed = parseInt(raw, 10);
+  if (parsed <= 0) {
+    console.error(`Error: ${flagName} must be a positive integer`);
+    process.exit(1);
+  }
+  return { value: parsed, spliceCount: inlineValue !== null ? 1 : 2 };
+}
+
+function parseNonNegativeIntFlag(
+  flagName: string,
+  inlineValue: string | null,
+  args: string[],
+  index: number,
+): { value: number; spliceCount: number } {
+  const raw = inlineValue ?? args[index + 1];
+  if (raw === undefined || (inlineValue === null && raw.startsWith("-"))) {
+    console.error(`Error: ${flagName} requires a non-negative integer`);
+    process.exit(1);
+  }
+  if (!/^\d+$/.test(raw)) {
+    console.error(`Error: ${flagName} must be a non-negative integer`);
+    process.exit(1);
+  }
+  return { value: parseInt(raw, 10), spliceCount: inlineValue !== null ? 1 : 2 };
 }
 
 export function parseScriptArgs(argv: string[]): ParsedScriptArgs {
@@ -24,6 +84,8 @@ export function parseScriptArgs(argv: string[]): ParsedScriptArgs {
   let cachePath: string | undefined;
   let queueInterval: number | undefined;
   let queueConcurrency: number | undefined;
+  let queueHistoryTtl: number | undefined;
+  let queueMaxSessions: number | undefined;
   const authUsers: string[] = [];
 
   for (let i = 0; i < args.length; i++) {
@@ -35,49 +97,33 @@ export function parseScriptArgs(argv: string[]): ParsedScriptArgs {
     const inlineValue = eqIdx >= 0 ? arg.slice(eqIdx + 1) : null;
 
     if (flag === "--projects-path" || flag === "-p") {
-      const value = inlineValue ?? args[i + 1];
-      if (value === undefined || (inlineValue === null && value.startsWith("-"))) {
-        console.error("Error: --projects-path requires a path argument");
-        process.exit(1);
-      }
+      const { value, spliceCount } = parseStringFlag(flag, "a path argument", inlineValue, args, i);
       claudeProjectsPath = value;
-      args.splice(i, inlineValue !== null ? 1 : 2);
+      args.splice(i, spliceCount);
       i--;
       continue;
     }
 
     if (flag === "--evals") {
-      const value = inlineValue ?? args[i + 1];
-      if (value === undefined || (inlineValue === null && value.startsWith("-"))) {
-        console.error("Error: --evals requires a path argument");
-        process.exit(1);
-      }
-      evalsPath = resolve(value);
-      args.splice(i, inlineValue !== null ? 1 : 2);
+      const { value, spliceCount } = parseStringFlag(flag, "a path argument", inlineValue, args, i, { resolve: true });
+      evalsPath = value;
+      args.splice(i, spliceCount);
       i--;
       continue;
     }
 
     if (flag === "--cache") {
-      const value = inlineValue ?? args[i + 1];
-      if (value === undefined || (inlineValue === null && value.startsWith("-"))) {
-        console.error("Error: --cache requires a value (on|off)");
-        process.exit(1);
-      }
+      const { value, spliceCount } = parseStringFlag(flag, "a value (on|off)", inlineValue, args, i);
       cacheMode = value;
-      args.splice(i, inlineValue !== null ? 1 : 2);
+      args.splice(i, spliceCount);
       i--;
       continue;
     }
 
     if (flag === "--cache-path") {
-      const value = inlineValue ?? args[i + 1];
-      if (value === undefined || (inlineValue === null && value.startsWith("-"))) {
-        console.error("Error: --cache-path requires a path argument");
-        process.exit(1);
-      }
-      cachePath = resolve(value);
-      args.splice(i, inlineValue !== null ? 1 : 2);
+      const { value, spliceCount } = parseStringFlag(flag, "a path argument", inlineValue, args, i, { resolve: true });
+      cachePath = value;
+      args.splice(i, spliceCount);
       i--;
       continue;
     }
@@ -99,43 +145,33 @@ export function parseScriptArgs(argv: string[]): ParsedScriptArgs {
     }
 
     if (flag === "--queue-interval") {
-      const value = inlineValue ?? args[i + 1];
-      if (value === undefined || (inlineValue === null && value.startsWith("-"))) {
-        console.error("Error: --queue-interval requires a positive integer (seconds)");
-        process.exit(1);
-      }
-      if (!/^\d+$/.test(value)) {
-        console.error("Error: --queue-interval must be a positive integer");
-        process.exit(1);
-      }
-      const parsed = parseInt(value, 10);
-      if (parsed <= 0) {
-        console.error("Error: --queue-interval must be a positive integer");
-        process.exit(1);
-      }
-      queueInterval = parsed;
-      args.splice(i, inlineValue !== null ? 1 : 2);
+      const { value, spliceCount } = parsePositiveIntFlag(flag, inlineValue, args, i);
+      queueInterval = value;
+      args.splice(i, spliceCount);
       i--;
       continue;
     }
 
     if (flag === "--queue-concurrency") {
-      const value = inlineValue ?? args[i + 1];
-      if (value === undefined || (inlineValue === null && value.startsWith("-"))) {
-        console.error("Error: --queue-concurrency requires a positive integer");
-        process.exit(1);
-      }
-      if (!/^\d+$/.test(value)) {
-        console.error("Error: --queue-concurrency must be a positive integer");
-        process.exit(1);
-      }
-      const parsed = parseInt(value, 10);
-      if (parsed <= 0) {
-        console.error("Error: --queue-concurrency must be a positive integer");
-        process.exit(1);
-      }
-      queueConcurrency = parsed;
-      args.splice(i, inlineValue !== null ? 1 : 2);
+      const { value, spliceCount } = parsePositiveIntFlag(flag, inlineValue, args, i);
+      queueConcurrency = value;
+      args.splice(i, spliceCount);
+      i--;
+      continue;
+    }
+
+    if (flag === "--queue-history-ttl") {
+      const { value, spliceCount } = parsePositiveIntFlag(flag, inlineValue, args, i);
+      queueHistoryTtl = value;
+      args.splice(i, spliceCount);
+      i--;
+      continue;
+    }
+
+    if (flag === "--queue-max-sessions") {
+      const { value, spliceCount } = parseNonNegativeIntFlag(flag, inlineValue, args, i);
+      queueMaxSessions = value;
+      args.splice(i, spliceCount);
       i--;
       continue;
     }
@@ -159,5 +195,5 @@ export function parseScriptArgs(argv: string[]): ParsedScriptArgs {
     }
   }
 
-  return { claudeProjectsPath, evalsPath, cacheMode, cachePath, queueInterval, queueConcurrency, authUsers, remainingArgs: args };
+  return { claudeProjectsPath, evalsPath, cacheMode, cachePath, queueInterval, queueConcurrency, queueHistoryTtl, queueMaxSessions, authUsers, remainingArgs: args };
 }

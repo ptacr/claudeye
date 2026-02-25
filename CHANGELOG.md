@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.6.1
+
+### CLI Queue Configuration Flags
+
+- **New: `--queue-interval <secs>`** — set the background scan interval directly from the CLI instead of using `CLAUDEYE_QUEUE_INTERVAL` env var
+- **New: `--queue-concurrency <num>`** — set max parallel items per batch from the CLI instead of using `CLAUDEYE_QUEUE_CONCURRENCY` env var
+- **New: `--queue-history-ttl <secs>`** — set completed items history TTL from the CLI instead of using `CLAUDEYE_QUEUE_HISTORY_TTL` env var
+- **New: `--queue-max-sessions <num>`** — limit the number of sessions processed per background scan instead of using `CLAUDEYE_QUEUE_MAX_SESSIONS` env var (default: 8, 0=unlimited)
+- All four flags are available in both the production CLI (`claudeye`) and dev scripts (`bun run dev` / `bun run start`)
+- Queue configuration is now displayed in the startup banner when `--queue-interval` is set
+
+### Bug Fixes
+
+- **Fix: background queue now scans immediately on startup** — previously the first `scanAndEnqueue()` was delayed by the full `--queue-interval` duration, so with large intervals (e.g. 1200s) uncached sessions wouldn't appear for 20 minutes
+- **New: diagnostic logging in `scanAndEnqueue()`** — logs eval/enricher counts, discovered sessions, max-sessions cap, and total enqueued items at each scan, prefixed with `[eval-queue]`
+- **Docs:** Fixed default concurrency documented as `3` — the actual code default is `2`
+
 ## 0.6.0
 
 ### Unified Queue System
