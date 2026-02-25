@@ -451,7 +451,7 @@ pm2 save
 9. Results are serialized and displayed in separate panels in the dashboard UI
 10. Named dashboard views (`/dashboard`) show a view index; each view (`/dashboard/[viewName]`) computes filter values incrementally (only new/changed sessions are processed), then filters and paginates server-side for efficiency
 11. Dashboard aggregates run a separate server action that collects per-session values (with eval/enrichment/filter results) and reduces them via user-defined reduce functions into sortable summary tables
-12. When `--queue-interval` is set, a background processor scans for uncached items on a timer. Track queue state at `/queue` or via the navbar dropdown
+12. When `CLAUDEYE_QUEUE_INTERVAL` is set, a background processor scans for uncached items on a timer. Track queue state at `/queue` or via the navbar dropdown
 
 ## Contributing
 

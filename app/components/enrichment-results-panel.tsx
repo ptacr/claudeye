@@ -116,6 +116,10 @@ export default function EnrichmentResultsPanel({ projectName, sessionId, agentId
   useEffect(() => {
     mountedRef.current = true;
     let stale = false;
+    setProbing(true);
+    setError(null);
+    setNoEnrichers(false);
+    setItems([]);
 
     checkEnrichmentCacheAndList(projectName, sessionId, agentId, subagentType).then(probe => {
       if (stale || !mountedRef.current) return;

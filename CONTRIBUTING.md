@@ -25,7 +25,7 @@ The dev server starts at `http://localhost:8020`.
 | `bun run lint` | Run ESLint |
 | `bunx tsc --noEmit` | Type-check without emitting |
 | `bun run test:run` | Run tests once (Vitest) |
-| `bun test` | Run tests in watch mode |
+| `bun run test` | Run tests in watch mode |
 | `bun run build` | Production build (Next.js) |
 
 ## Project Structure

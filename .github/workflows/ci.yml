@@ -24,7 +24,7 @@ jobs:
         with:
           bun-version: ${{ matrix.bun-version }}
 
-      - run: bun install
+      - run: bun install --frozen-lockfile
 
       - name: Lint
         run: bun run lint

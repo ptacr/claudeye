@@ -11,22 +11,27 @@ export async function queueAndProcessEnrichment(
   forceRefresh: boolean = false,
   subagent?: { agentId: string; subagentType?: string; subagentDescription?: string },
 ): Promise<SessionEnrichmentResult> {
-  const res = await fetch("/api/queue-item", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      type: "enrichment",
-      projectName,
-      sessionId,
-      itemName: enricherName,
-      forceRefresh,
-      ...(subagent && {
-        agentId: subagent.agentId,
-        subagentType: subagent.subagentType,
-        subagentDescription: subagent.subagentDescription,
+  let res: Response;
+  try {
+    res = await fetch("/api/queue-item", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "enrichment",
+        projectName,
+        sessionId,
+        itemName: enricherName,
+        forceRefresh,
+        ...(subagent && {
+          agentId: subagent.agentId,
+          subagentType: subagent.subagentType,
+          subagentDescription: subagent.subagentDescription,
+        }),
       }),
-    }),
-  });
+    });
+  } catch (err) {
+    return { ok: false, error: `Network error: ${err instanceof Error ? err.message : String(err)}` };
+  }
 
   if (res.status === 202) {
     return { ok: false, error: "__queued__" };

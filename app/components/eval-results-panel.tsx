@@ -174,6 +174,10 @@ export default function EvalResultsPanel({ projectName, sessionId, agentId, suba
   useEffect(() => {
     mountedRef.current = true;
     let stale = false;
+    setProbing(true);
+    setError(null);
+    setNoEvals(false);
+    setItems([]);
 
     checkEvalCacheAndList(projectName, sessionId, agentId, subagentType).then(probe => {
       if (stale || !mountedRef.current) return;

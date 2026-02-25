@@ -320,16 +320,22 @@ export function queuePerItem<T>(
       drainQueue();
     };
 
-    const promise = task().then(
-      (result) => {
-        onComplete(true);
-        return result;
-      },
-      (error) => {
-        onComplete(false, error instanceof Error ? error.message : String(error));
-        throw error;
-      },
-    );
+    let promise: Promise<unknown>;
+    try {
+      promise = task().then(
+        (result) => {
+          onComplete(true);
+          return result;
+        },
+        (error) => {
+          onComplete(false, error instanceof Error ? error.message : String(error));
+          throw error;
+        },
+      );
+    } catch (error) {
+      onComplete(false, error instanceof Error ? error.message : String(error));
+      promise = Promise.reject(error);
+    }
 
     state.promises.set(key, promise);
     return promise;
