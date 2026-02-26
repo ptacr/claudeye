@@ -14,6 +14,7 @@ import { QueueDivider } from "@/app/components/log-viewer/queue-divider";
 import { EntryRow } from "@/app/components/log-viewer/entry-row";
 import EvalResultsPanel from "@/app/components/eval-results-panel";
 import EnrichmentResultsPanel from "@/app/components/enrichment-results-panel";
+import ActionResultsPanel from "@/app/components/action-results-panel";
 
 // ── Subagent metadata extraction ──
 
@@ -293,6 +294,8 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
 
       <EnrichmentResultsPanel projectName={projectName} sessionId={sessionId} />
 
+      <ActionResultsPanel projectName={projectName} sessionId={sessionId} />
+
       {subagents.length > 0 && (
         <div className="space-y-3">
           <button
@@ -332,6 +335,14 @@ export default function RawLogViewer({ entries, projectName, sessionId }: RawLog
                     compact
                   />
                   <EnrichmentResultsPanel
+                    projectName={projectName}
+                    sessionId={sessionId}
+                    agentId={sa.id}
+                    subagentType={sa.type}
+                    subagentDescription={sa.description}
+                    compact
+                  />
+                  <ActionResultsPanel
                     projectName={projectName}
                     sessionId={sessionId}
                     agentId={sa.id}

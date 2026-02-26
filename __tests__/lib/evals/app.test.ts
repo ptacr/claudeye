@@ -9,6 +9,10 @@ vi.mock("@/lib/evals/enrich-registry", () => ({
   registerEnricher: vi.fn(),
 }));
 
+vi.mock("@/lib/evals/action-registry", () => ({
+  registerAction: vi.fn(),
+}));
+
 vi.mock("@/lib/evals/dashboard-registry", () => ({
   registerFilter: vi.fn(),
   registerView: vi.fn(),
@@ -28,6 +32,7 @@ vi.mock("@/lib/evals/server-spawn", () => ({
 
 import { registerEval } from "@/lib/evals/registry";
 import { registerEnricher } from "@/lib/evals/enrich-registry";
+import { registerAction } from "@/lib/evals/action-registry";
 import { registerFilter, registerView } from "@/lib/evals/dashboard-registry";
 import { setGlobalCondition } from "@/lib/evals/condition-registry";
 import { registerAuthUsers } from "@/lib/evals/auth-registry";
@@ -35,6 +40,7 @@ import { createApp } from "@/lib/evals/app";
 
 const mockRegisterEval = vi.mocked(registerEval);
 const mockRegisterEnricher = vi.mocked(registerEnricher);
+const mockRegisterAction = vi.mocked(registerAction);
 const mockRegisterFilter = vi.mocked(registerFilter);
 const mockRegisterView = vi.mocked(registerView);
 const mockSetGlobalCondition = vi.mocked(setGlobalCondition);
@@ -48,10 +54,11 @@ describe("evals/app", () => {
     delete (globalThis as Record<string, unknown>)[LOADING_KEY];
   });
 
-  it("createApp returns an object with eval, enrich, condition, auth, dashboard, and listen", () => {
+  it("createApp returns an object with eval, enrich, action, condition, auth, dashboard, and listen", () => {
     const app = createApp();
     expect(typeof app.eval).toBe("function");
     expect(typeof app.enrich).toBe("function");
+    expect(typeof app.action).toBe("function");
     expect(typeof app.condition).toBe("function");
     expect(typeof app.auth).toBe("function");
     expect(typeof app.dashboard.filter).toBe("function");
@@ -157,6 +164,32 @@ describe("evals/app", () => {
     const fn = () => ({ val: 1 });
     app.enrich("sub-enrich", fn, { scope: "subagent", subagentType: "Explore" });
     expect(mockRegisterEnricher).toHaveBeenCalledWith("sub-enrich", fn, undefined, "subagent", "Explore");
+  });
+
+  // --- action() tests ---
+
+  it("action() registers the action in the registry", () => {
+    const app = createApp();
+    const fn = () => ({ status: "success" as const });
+    app.action("my-action", fn);
+    expect(mockRegisterAction).toHaveBeenCalledWith("my-action", fn, undefined, undefined, undefined, undefined);
+  });
+
+  it("action() with options passes condition, scope, subagentType, and cache", () => {
+    const app = createApp();
+    const fn = () => ({ status: "success" as const });
+    const condFn = () => true;
+    app.action("cond-action", fn, { condition: condFn, scope: "subagent", subagentType: "Explore", cache: false });
+    expect(mockRegisterAction).toHaveBeenCalledWith("cond-action", fn, condFn, "subagent", "Explore", false);
+  });
+
+  it("action() is chainable", () => {
+    const app = createApp();
+    const result = app
+      .action("a", () => ({ status: "success" as const }))
+      .action("b", () => ({ status: "error" as const }));
+    expect(result).toBe(app);
+    expect(mockRegisterAction).toHaveBeenCalledTimes(2);
   });
 
   // --- dashboard.filter() tests ---

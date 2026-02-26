@@ -22,17 +22,15 @@ function timeAgo(ms: number): string {
   return `${hours}h ago`;
 }
 
-function TypeBadge({ type }: { type: "eval" | "enrichment" }) {
-  const isEval = type === "eval";
+function TypeBadge({ type }: { type: "eval" | "enrichment" | "action" }) {
+  const colors = type === "eval"
+    ? "bg-blue-500/15 text-blue-500"
+    : type === "action"
+      ? "bg-amber-500/15 text-amber-500"
+      : "bg-purple-500/15 text-purple-500";
   return (
-    <span
-      className={`text-[10px] font-medium px-1 py-0.5 rounded ${
-        isEval
-          ? "bg-blue-500/15 text-blue-500"
-          : "bg-purple-500/15 text-purple-500"
-      }`}
-    >
-      {isEval ? "EVAL" : "ENRICHMENT"}
+    <span className={`text-[10px] font-medium px-1 py-0.5 rounded ${colors}`}>
+      {type.toUpperCase()}
     </span>
   );
 }

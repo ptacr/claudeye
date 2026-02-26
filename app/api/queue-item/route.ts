@@ -4,6 +4,8 @@ import { processSessionEval } from "@/app/actions/process-session-eval";
 import { processSessionEnrichment } from "@/app/actions/process-session-enrichment";
 import { processSubagentEval } from "@/app/actions/process-subagent-eval";
 import { processSubagentEnrichment } from "@/app/actions/process-subagent-enrichment";
+import { processSessionAction } from "@/app/actions/process-session-action";
+import { processSubagentAction } from "@/app/actions/process-subagent-action";
 
 export async function POST(request: Request) {
   try {
@@ -60,6 +62,27 @@ export async function POST(request: Request) {
       if (raceResult === "timeout") {
         return NextResponse.json(
           { ok: true, queued: true, key: `enrichment:${projectName}/${queueSessionId}/${itemName}` },
+          { status: 202 },
+        );
+      }
+      return NextResponse.json(raceResult);
+    }
+
+    if (type === "action") {
+      const task = agentId
+        ? () => processSubagentAction(projectName, sessionId, agentId, itemName, forceRefresh ?? false, subagentType, subagentDescription)
+        : () => processSessionAction(projectName, sessionId, itemName, forceRefresh ?? false);
+
+      const promise = queuePerItem("action", projectName, queueSessionId, itemName, task, {
+        priority: Priority.HIGH,
+        forceRefresh,
+      });
+      const timeout = new Promise<"timeout">(r => setTimeout(() => r("timeout"), TIMEOUT_MS));
+      const raceResult = await Promise.race([promise, timeout]);
+
+      if (raceResult === "timeout") {
+        return NextResponse.json(
+          { ok: true, queued: true, key: `action:${projectName}/${queueSessionId}/${itemName}` },
           { status: 202 },
         );
       }

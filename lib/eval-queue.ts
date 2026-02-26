@@ -39,7 +39,7 @@ export function priorityLabel(priority: number): string {
 
 export interface QueueEntry {
   key: string;           // "eval:project/session/itemName" or "enrichment:..."
-  type: "eval" | "enrichment";
+  type: "eval" | "enrichment" | "action";
   projectName: string;
   sessionId: string;
   itemName: string;
@@ -53,7 +53,7 @@ interface InternalQueueEntry extends QueueEntry {
 
 export interface ProcessingEntry {
   key: string;
-  type: "eval" | "enrichment";
+  type: "eval" | "enrichment" | "action";
   projectName: string;
   sessionId: string;
   itemName: string;
@@ -63,7 +63,7 @@ export interface ProcessingEntry {
 
 export interface CompletedEntry {
   key: string;
-  type: "eval" | "enrichment";
+  type: "eval" | "enrichment" | "action";
   projectName: string;
   sessionId: string;
   itemName: string;
@@ -245,7 +245,7 @@ function drainQueue(): void {
 // ── queuePerItem: the single entry point for all work ──
 
 export function queuePerItem<T>(
-  type: "eval" | "enrichment",
+  type: "eval" | "enrichment" | "action",
   projectName: string,
   sessionId: string,
   itemName: string,
@@ -317,8 +317,8 @@ export function queuePerItem<T>(
         }
       }
 
-      // Fire alerts (debounced, fire-and-forget) on success
-      if (success) {
+      // Fire alerts (debounced, fire-and-forget) on eval/enrichment success
+      if (success && (type === "eval" || type === "enrichment")) {
         debouncedFireAlerts(projectName, sessionId);
       }
 

@@ -33,6 +33,37 @@ app.eval('under-50-turns', ({ stats }) => {
   };
 });
 
+// --- Actions ---
+
+app.action('session-summary', ({ entries, stats, evalResults }) => {
+  const evalNames = Object.keys(evalResults);
+  const passCount = evalNames.filter(n => evalResults[n]?.pass).length;
+  const lines = [
+    `Session: ${stats.turnCount} turns, ${stats.toolCallCount} tool calls`,
+    `Duration: ${stats.duration}`,
+    `Models: ${stats.models.join(', ') || 'unknown'}`,
+    `Evals: ${passCount}/${evalNames.length} passed`,
+  ];
+  return {
+    output: lines.join('\n'),
+    data: { turns: stats.turnCount, toolCalls: stats.toolCallCount, evalsPassed: passCount },
+    status: 'success',
+    message: 'Summary generated',
+  };
+});
+
+app.action('export-metrics', ({ stats, enrichmentResults }) => {
+  const enrichData = {};
+  for (const [name, result] of Object.entries(enrichmentResults)) {
+    if (result.data) Object.assign(enrichData, result.data);
+  }
+  return {
+    data: { ...enrichData, turnCount: stats.turnCount, toolCallCount: stats.toolCallCount },
+    status: 'success',
+    message: `Exported ${Object.keys(enrichData).length + 2} metrics`,
+  };
+});
+
 // --- Dashboard view with aggregates ---
 
 app.dashboard.view('overview', { label: 'Session Overview' })

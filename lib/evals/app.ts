@@ -9,6 +9,7 @@
  */
 import { registerEval } from "./registry";
 import { registerEnricher } from "./enrich-registry";
+import { registerAction } from "./action-registry";
 import { registerAlert } from "./alert-registry";
 import { registerFilter, registerView, registerAggregate } from "./dashboard-registry";
 import { setGlobalCondition } from "./condition-registry";
@@ -16,6 +17,7 @@ import { registerAuthUsers } from "./auth-registry";
 import type { AuthUser } from "./auth-registry";
 import type { ConditionFunction, EvalFunction, EvalScope } from "./types";
 import type { EnrichFunction } from "./enrich-types";
+import type { ActionFunction } from "./action-types";
 import type { AlertFunction } from "./alert-types";
 import type { FilterFunction, FilterOptions, ViewOptions, AggregateDefinition, AggregateOptions } from "./dashboard-types";
 
@@ -46,6 +48,13 @@ export interface EnrichOptions {
   subagentType?: string;
 }
 
+export interface ActionOptions {
+  condition?: ConditionFunction;
+  scope?: EvalScope;
+  subagentType?: string;
+  cache?: boolean;
+}
+
 export interface DashboardViewBuilder {
   /** Register a filter on this view. Returns the view builder for chaining. */
   filter(name: string, fn: FilterFunction, options?: FilterOptions): DashboardViewBuilder;
@@ -69,6 +78,8 @@ export interface ClaudeyeApp {
   eval(name: string, fn: EvalFunction, options?: EvalOptions): ClaudeyeApp;
   /** Register an enricher function. Chainable. */
   enrich(name: string, fn: EnrichFunction, options?: EnrichOptions): ClaudeyeApp;
+  /** Register a user-defined action. Chainable. */
+  action(name: string, fn: ActionFunction, options?: ActionOptions): ClaudeyeApp;
   /** Register an alert callback that fires after all evals+enrichments complete. Chainable. */
   alert(name: string, fn: AlertFunction): ClaudeyeApp;
   /** Configure username/password authentication. Chainable. */
@@ -93,6 +104,11 @@ export function createApp(): ClaudeyeApp {
 
     enrich(name: string, fn: EnrichFunction, options?: EnrichOptions): ClaudeyeApp {
       registerEnricher(name, fn, options?.condition, options?.scope, options?.subagentType);
+      return app;
+    },
+
+    action(name: string, fn: ActionFunction, options?: ActionOptions): ClaudeyeApp {
+      registerAction(name, fn, options?.condition, options?.scope, options?.subagentType, options?.cache);
       return app;
     },
 

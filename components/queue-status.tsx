@@ -21,17 +21,15 @@ interface QueueStatusData {
   recentErrors: QueueError[];
 }
 
-function TypeBadge({ type }: { type: "eval" | "enrichment" }) {
-  const isEval = type === "eval";
+function TypeBadge({ type }: { type: "eval" | "enrichment" | "action" }) {
+  const colors = type === "eval"
+    ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+    : type === "action"
+      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400"
+      : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400";
   return (
-    <span
-      className={`inline-flex items-center rounded px-1 py-0.5 text-[0.6rem] font-medium leading-none ${
-        isEval
-          ? "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-          : "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-      }`}
-    >
-      {isEval ? "EVAL" : "ENRICHMENT"}
+    <span className={`inline-flex items-center rounded px-1 py-0.5 text-[0.6rem] font-medium leading-none ${colors}`}>
+      {type.toUpperCase()}
     </span>
   );
 }
