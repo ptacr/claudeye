@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.6.2
+
+### User-Defined Actions
+
+- **New: `app.action(name, fn, options?)` API** — register custom actions that run on demand from the session dashboard. Unlike evals (pass/fail grading) or enrichments (key-value metadata), actions have no fixed output shape — return text `output`, structured `data`, or both.
+- **Extended context:** Action functions receive an `ActionContext` that includes cached eval and enrichment results (`evalResults`, `enrichmentResults`) alongside the standard `entries`, `stats`, `projectName`, and `sessionId` — enabling actions that build on prior analysis.
+- **Manual trigger:** Actions are never auto-run. The Actions panel shows registered actions as idle; click **Run** per action or **Run All** to execute. Results are cached (opt-out with `{ cache: false }`).
+- **Flexible output:** Actions return `{ status, output?, data?, message? }`. Text `output` renders in a monospace block; structured `data` renders as key-value pairs. Both can coexist.
+- **Same option system:** Supports `condition`, `scope` (`'session'`, `'subagent'`, `'both'`), `subagentType`, and `cache` — consistent with evals and enrichments.
+- **Error isolation:** Each action is individually try/caught. One throwing action doesn't block others.
+- **Queue integration:** Actions route through the unified priority queue. UI-triggered actions use HIGH priority.
+- **Subagent support:** Actions can target subagent logs with `scope: 'subagent'`. The Actions panel appears in expanded subagent cards when matching actions are registered.
+- **Types exported:** `ActionContext`, `ActionFunction`, `ActionResult`, `ActionRunResult`, `ActionRunSummary`, and `RegisteredAction` are published in the `claudeye` package.
+
 ## 0.6.1
 
 ### CLI Queue Configuration Flags

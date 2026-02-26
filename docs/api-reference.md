@@ -1,6 +1,6 @@
 # Claudeye API Reference
 
-Full API documentation for Claudeye's custom evals, enrichments, alerts, and dashboard filters. For a quick overview, see the [README](../README.md).
+Full API documentation for Claudeye's custom evals, enrichments, actions, alerts, and dashboard filters. For a quick overview, see the [README](../README.md).
 
 ---
 
@@ -17,13 +17,13 @@ const app = createApp();
 
 ## `app.condition(fn)`
 
-Set a global condition that gates all evals and enrichments. Calling this multiple times replaces the previous condition.
+Set a global condition that gates all evals, enrichments, and actions. Calling this multiple times replaces the previous condition.
 
 ```ts
 app.condition(({ entries, stats, projectName, sessionId }) => boolean | Promise<boolean>);
 ```
 
-If the global condition returns `false` (or throws), every registered eval and enrichment is skipped.
+If the global condition returns `false` (or throws), every registered eval, enrichment, and action is skipped.
 
 ### Examples
 
@@ -706,6 +706,189 @@ interface EnrichRunSummary {
 
 ---
 
+## `app.action(name, fn, options?)`
+
+Register a user-defined action. Actions are a flexible primitive for on-demand tasks — generating summaries, exporting metrics, running side-effects, or anything else that doesn't fit the eval (pass/fail) or enrichment (key-value) model. Actions are never auto-run; they are triggered manually from the dashboard.
+
+- **`name`** - unique string identifier for the action
+- **`fn`** - function receiving an `ActionContext` and returning an `ActionResult`
+- **`options.condition`** - optional condition function to gate this action
+- **`options.scope`** - `'session'` (default), `'subagent'`, or `'both'`
+- **`options.subagentType`** - only run for subagents of this type (e.g. `'Explore'`)
+- **`options.cache`** - cache results (default: `true`). Set to `false` for side-effect actions that should always re-run.
+
+### ActionContext
+
+Actions receive an extended context that includes cached eval and enrichment results:
+
+```ts
+interface ActionContext extends EvalContext {
+  evalResults: Record<string, EvalRunResult>;       // Cached eval results for the session
+  enrichmentResults: Record<string, EnrichRunResult>; // Cached enrichment results
+}
+```
+
+This means actions can build on prior analysis — check which evals passed, read enrichment data, and combine it with raw session data.
+
+### ActionResult
+
+```ts
+interface ActionResult {
+  output?: string;                    // Free-form text (rendered in monospace block)
+  data?: Record<string, unknown>;     // Structured key-value pairs (rendered as a grid)
+  status: 'success' | 'error';       // Action outcome
+  message?: string;                   // Short summary shown in the UI
+}
+```
+
+Return `output` for text, `data` for structured values, or both. The `status` field determines the icon in the results panel.
+
+### Examples
+
+```js
+// Session summary: combine stats with eval results
+app.action('session-summary', ({ entries, stats, evalResults }) => {
+  const evalNames = Object.keys(evalResults);
+  const passCount = evalNames.filter(n => evalResults[n]?.pass).length;
+  return {
+    output: [
+      `Session: ${stats.turnCount} turns, ${stats.toolCallCount} tool calls`,
+      `Duration: ${stats.duration}`,
+      `Models: ${stats.models.join(', ') || 'unknown'}`,
+      `Evals: ${passCount}/${evalNames.length} passed`,
+    ].join('\n'),
+    data: { turns: stats.turnCount, toolCalls: stats.toolCallCount, evalsPassed: passCount },
+    status: 'success',
+    message: 'Summary generated',
+  };
+});
+
+// Export metrics: gather enrichment data into a flat structure
+app.action('export-metrics', ({ stats, enrichmentResults }) => {
+  const enrichData = {};
+  for (const [name, result] of Object.entries(enrichmentResults)) {
+    if (result.data) Object.assign(enrichData, result.data);
+  }
+  return {
+    data: { ...enrichData, turnCount: stats.turnCount, toolCallCount: stats.toolCallCount },
+    status: 'success',
+    message: `Exported ${Object.keys(enrichData).length + 2} metrics`,
+  };
+});
+
+// Side-effect action: write results to a file (disable caching)
+app.action('write-report', async ({ projectName, sessionId, stats, evalResults }) => {
+  const fs = await import('fs/promises');
+  const report = {
+    projectName, sessionId,
+    turns: stats.turnCount,
+    evals: Object.fromEntries(
+      Object.entries(evalResults).map(([name, r]) => [name, { pass: r.pass, score: r.score }])
+    ),
+    timestamp: new Date().toISOString(),
+  };
+  await fs.appendFile('session-reports.jsonl', JSON.stringify(report) + '\n');
+  return {
+    status: 'success',
+    message: `Report appended to session-reports.jsonl`,
+    data: { file: 'session-reports.jsonl', entries: 1 },
+  };
+}, { cache: false });
+
+// Conditional action: only available for sessions with tool usage
+app.action('tool-analysis', ({ entries, source }) => {
+  const toolUses = entries.filter(e =>
+    e._source === (source || 'session') &&
+    e.type === 'assistant' &&
+    Array.isArray(e.message?.content) &&
+    e.message.content.some(b => b.type === 'tool_use')
+  );
+  const toolNames = [...new Set(toolUses.flatMap(e =>
+    (e.message?.content || []).filter(b => b.type === 'tool_use').map(b => b.name)
+  ))];
+  return {
+    output: toolNames.length > 0
+      ? `Tools used: ${toolNames.join(', ')}`
+      : 'No tools used',
+    data: { uniqueTools: toolNames.length, totalCalls: toolUses.length },
+    status: 'success',
+  };
+}, { condition: ({ stats }) => stats.toolCallCount > 0 });
+
+// Subagent-scoped action
+app.action('agent-report', ({ entries, source, stats }) => {
+  const myEntries = entries.filter(e => e._source === source);
+  return {
+    data: {
+      source,
+      entries: myEntries.length,
+      turns: stats.turnCount,
+      toolCalls: stats.toolCallCount,
+    },
+    status: 'success',
+    message: `Agent ${source}: ${myEntries.length} entries`,
+  };
+}, { scope: 'subagent' });
+```
+
+### `ActionFunction`
+
+```ts
+type ActionFunction = (context: ActionContext) => ActionResult | Promise<ActionResult>;
+```
+
+### `RegisteredAction`
+
+```ts
+interface RegisteredAction {
+  name: string;
+  fn: ActionFunction;
+  condition?: ConditionFunction;
+  scope: EvalScope;           // 'session' | 'subagent' | 'both'
+  subagentType?: string;
+  cache: boolean;             // default: true
+}
+```
+
+### `ActionRunResult`
+
+```ts
+interface ActionRunResult {
+  name: string;
+  output?: string;
+  data?: Record<string, unknown>;
+  status: 'success' | 'error';
+  message?: string;
+  durationMs: number;
+  error?: string;             // Present when the action threw or its condition threw
+  skipped?: boolean;          // Present when the global/per-action condition returned false
+}
+```
+
+### `ActionRunSummary`
+
+```ts
+interface ActionRunSummary {
+  results: ActionRunResult[];
+  totalDurationMs: number;
+  errorCount: number;
+  skippedCount: number;
+}
+```
+
+### UI Behavior
+
+The Actions panel appears on session pages (and in expanded subagent cards for subagent-scoped actions) when matching actions are registered. The panel:
+
+- Shows all registered actions as idle (not run) on initial load, with cached results displayed immediately
+- Provides a **Run** button per action and a **Run All** button in the header
+- Displays `output` in a monospace pre block and `data` as a key-value grid
+- Shows a "cached" badge for results served from cache
+- Collapses by default (click the header to expand)
+- Error count, success count, and loading spinners are visible in the header even when collapsed
+
+---
+
 ## Background Queue Processing
 
 The eval queue handles both foreground (UI) and background processing. It is used automatically for all eval/enrichment execution — no configuration needed for foreground processing.
@@ -1071,7 +1254,7 @@ Cache invalidation works the same way, based on the subagent log file's mtime+si
 
 ## Full Example
 
-A complete evals file combining evals, enrichments, alerts, dashboard views, conditions, and subagent scope:
+A complete evals file combining evals, enrichments, actions, alerts, dashboard views, conditions, and subagent scope:
 
 ```js
 import { createApp } from 'claudeye';
@@ -1139,6 +1322,22 @@ app.enrich('subagent-info',
   }),
   { condition: ({ stats }) => stats.subagentCount > 0 }
 );
+
+// --- Actions (manually triggered from dashboard) ---
+
+app.action('session-summary', ({ stats, evalResults }) => {
+  const evalNames = Object.keys(evalResults);
+  const passCount = evalNames.filter(n => evalResults[n]?.pass).length;
+  return {
+    output: [
+      `${stats.turnCount} turns, ${stats.toolCallCount} tool calls`,
+      `Duration: ${stats.duration}`,
+      `Evals: ${passCount}/${evalNames.length} passed`,
+    ].join('\n'),
+    data: { turns: stats.turnCount, evalsPassed: passCount },
+    status: 'success',
+  };
+});
 
 // --- Alerts ---
 
@@ -1245,12 +1444,13 @@ app.enrich('agent-summary', ({ entries, source, stats }) => ({
 
 ## Tips
 
-- Each eval, enricher, filter, and alert is wrapped in a try/catch. If one throws, the others still run. Eval/enricher/filter errors are shown in the UI; alert errors are logged to console.
+- Each eval, enricher, action, filter, and alert is wrapped in a try/catch. If one throws, the others still run. Eval/enricher/action/filter errors are shown in the UI; alert errors are logged to console.
 - Eval scores are clamped to 0-1. If you don't provide a score, it defaults to 1.0.
-- Eval, enricher, filter, condition, and alert functions can all be async.
-- Re-registering with the same name replaces the previous function (applies to evals, enrichers, filters, and alerts).
+- Eval, enricher, action, filter, condition, and alert functions can all be async.
+- Re-registering with the same name replaces the previous function (applies to evals, enrichers, actions, filters, and alerts).
 - Click "Re-run" in either panel to re-execute against the current session. Re-runs route through the unified queue, so alerts fire when all items for the session are complete.
-- You can mix `app.eval()`, `app.enrich()`, `app.alert()`, `app.condition()`, `app.dashboard.filter()`, `app.dashboard.view()`, and `app.dashboard.aggregate()` calls freely in the same file.
+- You can mix `app.eval()`, `app.enrich()`, `app.action()`, `app.alert()`, `app.condition()`, `app.dashboard.filter()`, `app.dashboard.view()`, and `app.dashboard.aggregate()` calls freely in the same file.
+- Actions are triggered manually from the dashboard — they never auto-run. Use `{ cache: false }` for side-effect actions that should always re-run.
 - Per-item condition errors are treated as eval/enrichment errors (not skips), so you'll see the error message in the UI.
 - Dashboard filter return types are auto-detected from the first non-null value: `boolean` &rarr; toggle, `number` &rarr; range slider, `string` &rarr; multi-select.
 - Filter values are computed incrementally server-side (only new/changed sessions). Filtering and pagination also happen server-side, with debounced re-fetches on filter changes.

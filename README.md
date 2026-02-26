@@ -68,6 +68,7 @@ Works with [Claude Code](https://docs.anthropic.com/en/docs/claude-code) session
 ### Utilize
 
 - **Custom enrichments** - compute metadata (token counts, quality signals, labels) as key-value pairs
+- **Custom actions** - on-demand tasks triggered from the dashboard via `app.action()` — generate summaries, export metrics, or run side-effects with full access to eval and enrichment results
 - **Alerts** - register callbacks via `app.alert()` that fire after all evals and enrichments complete (Slack webhooks, CI notifications, logging)
 - **Dashboard views & filters** - organize filters into named views, each with focused filter tiles (boolean toggles, range sliders, multi-select dropdowns) and a filterable sessions table
 - **Dashboard aggregates** - define cross-session summary tables with `app.dashboard.aggregate()`, using `{ collect, reduce }` for full control over output
@@ -193,6 +194,32 @@ app.enrich('session-overview', ({ entries, stats }) => ({
 ```
 
 [Read more: Enrichments API and EnrichmentResult type &rarr;](docs/api-reference.md#appenrich-name-fn-options)
+
+### Actions
+
+Actions are a flexible on-demand primitive — generate summaries, export metrics, run side-effects, or anything that doesn't fit the eval/enrichment model. Actions receive the full session context plus cached eval and enrichment results, and are triggered manually from the dashboard:
+
+```js
+app.action('session-summary', ({ stats, evalResults }) => {
+  const passCount = Object.values(evalResults).filter(r => r.pass).length;
+  return {
+    output: `${stats.turnCount} turns, ${passCount}/${Object.keys(evalResults).length} evals passed`,
+    data: { turns: stats.turnCount, evalsPassed: passCount },
+    status: 'success',
+  };
+});
+
+// Side-effect action (disable caching so it always re-runs)
+app.action('export-report', async ({ projectName, sessionId, stats }) => {
+  const fs = await import('fs/promises');
+  await fs.appendFile('reports.jsonl', JSON.stringify({ projectName, sessionId, turns: stats.turnCount }) + '\n');
+  return { status: 'success', message: 'Report exported' };
+}, { cache: false });
+```
+
+Actions support the same `condition`, `scope`, `subagentType`, and `cache` options as evals and enrichments.
+
+[Read more: Actions API, ActionContext, and ActionResult types &rarr;](docs/api-reference.md#appaction-name-fn-options)
 
 ### Dashboard Views & Filters
 
@@ -445,7 +472,7 @@ pm2 save
 
 ## How It Works
 
-1. `createApp()` + `app.eval()` / `app.enrich()` / `app.alert()` / `app.condition()` / `app.dashboard.view()` / `app.dashboard.filter()` / `app.dashboard.aggregate()` register functions in global registries
+1. `createApp()` + `app.eval()` / `app.enrich()` / `app.action()` / `app.alert()` / `app.condition()` / `app.dashboard.view()` / `app.dashboard.filter()` / `app.dashboard.aggregate()` register functions in global registries
 2. When you run `claudeye --evals ./my-file.js`, the server dynamically imports your file, populating the registries
 3. All eval/enrichment execution routes through a unified priority queue. Each individual eval and enrichment is a separate queue item. UI requests use HIGH priority; background scanning uses LOW priority
 4. Each item runs through: cache check → execute if uncached → cache result → check if session complete → fire alerts if complete
